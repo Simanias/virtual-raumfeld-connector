@@ -60,10 +60,23 @@ ROOM=$(ask "Kamernaam in Raumfeld [$DEVNAME]: " "$DEVNAME")
 echo "system-id = de systeem-UUID van je Raumfeld-systeem (op een bestaand toestel: /var/raumfeld-1.0/system-id)"
 SYSID=$(ask "Raumfeld system-id (leeg = later registreren): " "")
 
-c "5) Device-naam + firmware-update onderdrukken"
+c "5) Device-naam + model-label + firmware-update onderdrukken"
 mkdir -p "$ROOT/var/raumfeld-1.0"
 printf '[GLOBAL]\nrenderer-name=%s\n' "$DEVNAME" > "$ROOT/var/raumfeld-1.0/renderer-config.ini"
-echo "  device-naam: $DEVNAME"
+echo "  speler-naam (initieel): $DEVNAME"
+# model-label "Raumfeld Connector" -> "Virtual Connector" in libraumfeld (gelijke byte-lengte)
+LIB="$ROOT/usr/lib/libraumfeld-1.0.so"
+if [ -f "$LIB" ] && ! strings "$LIB" 2>/dev/null | grep -q '^Virtual Connector$'; then
+  [ -f "$LIB.orig" ] || cp -a "$LIB" "$LIB.orig"
+  python3 - "$LIB" <<'PY' || true
+import sys
+lib=sys.argv[1]; d=open(lib,"rb").read()
+o=b"Raumfeld Connector\x00"; n=b"Virtual Connector\x00\x00"
+if len(o)==len(n) and o in d:
+    open(lib+".new","wb").write(d.replace(o,n))
+PY
+  [ -f "$LIB.new" ] && chmod --reference="$LIB" "$LIB.new" && mv "$LIB.new" "$LIB" && echo "  model-label -> Virtual Connector"
+fi
 touch "$ROOT/etc/hosts"
 grep -q "$UPDATES_HOST" "$ROOT/etc/hosts" || printf '127.0.0.1 %s raumfeld.updates.teufel.de\n' "$UPDATES_HOST" >> "$ROOT/etc/hosts"
 echo "  firmware-updates geblokkeerd in de chroot (voorkomt kapotte update)"
