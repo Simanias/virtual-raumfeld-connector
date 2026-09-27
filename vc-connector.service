@@ -1,0 +1,15 @@
+[Unit]
+Description=Virtuele Raumfeld Connector (chroot + connman-stub + volume-brug)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/sleep 12
+ExecStart=/bin/bash /opt/virtualtools/vc-up.sh
+ExecStop=/bin/bash /opt/virtualtools/vc-down.sh
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

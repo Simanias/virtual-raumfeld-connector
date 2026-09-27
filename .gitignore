@@ -1,0 +1,10 @@
+# Nooit firmware / rootfs meecommitten (Teufel-copyright; installer haalt 'm officieel op)
+*.img
+*.tar
+*.tar.*
+connector-rootfs*
+rootfs/
+# lokale rommel
+*.log
+*.bak
+.DS_Store

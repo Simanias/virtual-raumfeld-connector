@@ -1,0 +1,13 @@
+[Unit]
+Description=Virtuele Raumfeld Connector - IP-watcher (herstart stack bij IP-wijziging)
+After=vc-connector.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /opt/virtualtools/vc-ip-watch.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
