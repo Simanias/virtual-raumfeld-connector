@@ -33,7 +33,11 @@ say "1) pseudo-fs mounten"
 for m in proc sys dev dev/pts run tmp; do mkdir -p "$ROOT/$m"; done
 mountpoint -q "$ROOT/proc" || mount -t proc  proc  "$ROOT/proc"
 mountpoint -q "$ROOT/sys"  || mount -t sysfs sys   "$ROOT/sys"
-mountpoint -q "$ROOT/dev"  || mount --rbind /dev   "$ROOT/dev"
+if ! mountpoint -q "$ROOT/dev"; then
+  mount --rbind /dev "$ROOT/dev"
+  # rslave: losmaken van de chroot-/dev mag NOOIT de host-/dev raken (anders valt de Pi eruit)
+  mount --make-rslave "$ROOT/dev" 2>/dev/null || true
+fi
 mountpoint -q "$ROOT/run"  || mount -t tmpfs tmpfs "$ROOT/run"
 
 say "2) connmand onschadelijk (wlan0 blijft met rust)"
