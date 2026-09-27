@@ -21,7 +21,8 @@ echo "== voorbereiden (kamer '$ROOM') =="
 mkdir -p "$D" "$ROOT/tmp"
 sed -i '/updates.raumfeld.com/d' "$ROOT/etc/hosts" 2>/dev/null   # oude update-blokkade: laat de setup vastlopen
 printf '[GLOBAL]\nrenderer-name=%s\n' "$ROOM" > "$D/renderer-config.ini"   # de setup gebruikt deze naam
-printf '{ "roomName": "%s", "isHost": false, "NETWORK": { "type": "wired" } }\n' "$ROOM" > "$ROOT/tmp/raumfeld-setup.json"
+# de PreconfiguredSetupController leest de sleutels name / isHost / ssid / password / psk ('name' = kamernaam)
+python3 -c 'import json,sys; print(json.dumps({"name": sys.argv[1], "isHost": False}))' "$ROOM" > "$ROOT/tmp/raumfeld-setup.json"
 [ -n "$SYSID" ] && printf '%s' "$SYSID" > "$D/system-id" && echo "  system-id afgedwongen: $SYSID"
 OLDID=$(cat "$D/system-id" 2>/dev/null)
 rm -f "$D/device-role.json"                                    # -> toestel gaat naar 'waiting-for-setup'
