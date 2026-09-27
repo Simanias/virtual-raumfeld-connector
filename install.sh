@@ -16,7 +16,7 @@ UPDATES_HOST="updates.raumfeld.com"
 CONF="$TOOLS/install.conf"
 RESUME_SVC=vc-install-resume
 SRCDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo /dev/null)"
-FILES="connman-stub.py vc-up.sh vc-down.sh vc-master.sh vc-volume-bridge.py vc-ip-watch.sh vc-setup.sh raumfeld-setup.json"
+FILES="connman-stub.py vc-up.sh vc-down.sh vc-master.sh vc-volume-bridge.py vc-ip-watch.sh vc-setup.sh"
 SERVICES="vc-connector.service vc-ip-watch.service"
 RESUME=0; [ "${1:-}" = "--resume" ] && RESUME=1
 [ -n "${VC_DEBUG:-}" ] && set -x    # uitgebreide trace voor debugging
@@ -136,15 +136,17 @@ PY
 fi
 touch "$ROOT/etc/hosts"; grep -q "$UPDATES_HOST" "$ROOT/etc/hosts" || printf '127.0.0.1 %s raumfeld.updates.teufel.de\n' "$UPDATES_HOST" >> "$ROOT/etc/hosts"
 
-c "7) Services activeren + stack starten"
+c "7) Services activeren"
 systemctl daemon-reload; systemctl enable vc-connector vc-ip-watch >/dev/null 2>&1 || true
-ALSADEV="hw:$CARD" bash "$TOOLS/vc-up.sh" || true
-systemctl start vc-ip-watch 2>/dev/null || true
-sleep 18
 
-c "8) Registreren als kamer"
+c "8) (optioneel) registreren als kamer"
 if [ -n "$SYSID" ]; then ALSADEV="hw:$CARD" bash "$TOOLS/vc-setup.sh" "$ROOM" "$SYSID" || echo "  (registratie niet bevestigd — zie /tmp/vc-master.log)"
 else echo "  Geen system-id — registreer later:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\" <system-id>"; fi
+
+c "9) persistente stack starten (via systemd — overleeft de installer/resume)"
+systemctl start vc-connector 2>/dev/null || true
+systemctl start vc-ip-watch 2>/dev/null || true
+sleep 10
 
 # resume-service opruimen
 systemctl disable $RESUME_SVC >/dev/null 2>&1 || true; rm -f /etc/systemd/system/$RESUME_SVC.service; systemctl daemon-reload 2>/dev/null || true

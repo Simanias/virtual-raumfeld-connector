@@ -43,6 +43,14 @@ mountpoint -q "$ROOT/run"  || mount -t tmpfs tmpfs "$ROOT/run"
 say "2) connmand onschadelijk (wlan0 blijft met rust)"
 [ -e "$ROOT/usr/sbin/connmand" ] && mv "$ROOT/usr/sbin/connmand" "$ROOT/usr/sbin/connmand.real" && echo "  hernoemd" || echo "  al onschadelijk"
 
+say "2b) renderer-wrapper (niet-virtueel -> opent echt ALSA-device i.p.v. netwerk-stream)"
+if [ -f "$ROOT/raumfeld/renderer/renderer" ] && [ ! -f "$ROOT/raumfeld/renderer/renderer.bin" ]; then
+  mv "$ROOT/raumfeld/renderer/renderer" "$ROOT/raumfeld/renderer/renderer.bin"
+  printf '#!/bin/sh\nunset RAUMFELD_VIRTUALISED_HARDWARE_ID\nexec /raumfeld/renderer/renderer.bin "$@"\n' > "$ROOT/raumfeld/renderer/renderer"
+  chmod +x "$ROOT/raumfeld/renderer/renderer"
+  echo "  wrapper geplaatst"
+else echo "  al aanwezig"; fi
+
 say "3) ALSA default -> $ALSADEV"
 cp -f /etc/resolv.conf "$ROOT/etc/resolv.conf" 2>/dev/null || true
 cat > "$ROOT/etc/asound.conf" <<EOF
@@ -55,6 +63,11 @@ for n in master-process renderer stream-decoder streamcastd config-service meta-
 sleep 1
 
 say "5) system-dbus + avahi + hardwared (virtueel, HWID=$HWID)"
+# schoon starten: stale chroot-dbus/hardwared + socket weg (voorkomt stub 'Connection refused' na herstart)
+pkill -9 -x hardwared 2>/dev/null; pkill -f start-hardwared 2>/dev/null; pkill -f "connman-stub.py" 2>/dev/null
+chroot "$ROOT" /bin/sh -c '/etc/init.d/S30dbus stop; /etc/init.d/S50avahi-daemon stop' >/dev/null 2>&1 || true
+rm -f "$ROOT/run/dbus/system_bus_socket" "$ROOT/run/dbus/pid" 2>/dev/null || true
+sleep 1
 chroot "$ROOT" /usr/bin/env -i PATH=$PATHV RAUMFELD_VIRTUALISED_HARDWARE_ID=$HWID \
   G_FILENAME_ENCODING=UTF-8,ISO-8859-1 RAUMFELD_LOG_TARGET=buffers /bin/sh -lc '
     /etc/init.d/S30dbus start          >/dev/null 2>&1
@@ -65,7 +78,7 @@ for i in $(seq 1 20); do [ -S "$SOCK" ] && break; sleep 0.3; done
 [ -S "$SOCK" ] && echo "  system-bus OK" || { echo "  !! geen system-bus"; exit 1; }
 
 say "6) connman-stub starten op de chroot-bus"
-pkill -x python3 2>/dev/null; sleep 1
+pkill -f "connman-stub.py" 2>/dev/null; sleep 1
 setsid python3 "$STUB" "unix:path=$SOCK" </dev/null >/tmp/connman-stub.log 2>&1 &
 for i in $(seq 1 20); do
   timeout 4 env DBUS_SYSTEM_BUS_ADDRESS="unix:path=$SOCK" dbus-send --system --dest=org.freedesktop.DBus \
@@ -94,5 +107,5 @@ setsid python3 "$BRIDGE" "${ALSADEV#hw:}" </dev/null >/tmp/vc-volume-bridge.log 
 echo "  volume-brug gestart ($BRIDGE, card ${ALSADEV#hw:})"
 
 echo
-echo "Klaar. In de Raumfeld-app verschijnt de kamer 'Raumfeld Connector' (renoembaar),"
-echo "audio -> HiFiBerry (hw:1), volume via de app-knop."
+echo "Klaar. De Virtuele Connector verschijnt in de Raumfeld-app (renoembaar),"
+echo "audio -> $ALSADEV, volume via de app-knop."
