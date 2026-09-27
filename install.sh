@@ -79,11 +79,11 @@ if [ "$RESUME" = 0 ]; then
     echo "  gekozen: ${OVERLAY:+overlay $OVERLAY → }${CARD}"
   fi
 
-  c "2) Overige keuzes"
-  DEVNAME=$(ask "Device-naam [Virtual Connector]: " "Virtual Connector" VC_DEVNAME)
-  ROOM=$(ask "Kamernaam in Raumfeld [$DEVNAME]: " "$DEVNAME" VC_ROOM)
-  echo "system-id = de systeem-UUID van je Raumfeld-systeem (op een toestel: /var/raumfeld-1.0/system-id)."
-  SYSID=$(ask "Raumfeld system-id (leeg = later/automatisch): " "" VC_SYSID)
+  c "2) Naam"
+  echo "Dit wordt de naam van de kamer/speler in de Raumfeld-app (later ook in de app te wijzigen)."
+  ROOM=$(ask "Kamernaam [Virtual Connector]: " "${VC_DEVNAME:-Virtual Connector}" VC_ROOM)
+  DEVNAME="$ROOM"
+  SYSID="${VC_SYSID:-}"      # normaal leeg: het toestel neemt het system-id automatisch over van je host
 
   # keuzes bewaren voor (resume na) reboot
   { echo "DEVNAME=$(printf %q "$DEVNAME")"; echo "ROOM=$(printf %q "$ROOM")"; echo "SYSID=$(printf %q "$SYSID")"
@@ -112,6 +112,7 @@ Wants=network-online.target
 ConditionPathExists=$CONF
 [Service]
 Type=oneshot
+TimeoutStartSec=infinity
 ExecStartPre=/bin/sleep 15
 ExecStart=/bin/bash -c 'curl -fsSL $REPO_RAW/install.sh | bash -s -- --resume'
 [Install]
@@ -150,7 +151,7 @@ for f in $FILES; do fetch "$f" "$TOOLS/$f"; done
 chmod +x "$TOOLS"/*.sh
 for s in $SERVICES; do fetch "$s" "/etc/systemd/system/$s"; done
 
-c "6) Device-naam + model-label + update-blokkade (audio -> card $CARD)"
+c "6) Naam + model-label (audio -> $CARD)"
 mkdir -p "$ROOT/var/raumfeld-1.0"
 printf '[GLOBAL]\nrenderer-name=%s\n' "$DEVNAME" > "$ROOT/var/raumfeld-1.0/renderer-config.ini"
 LIB="$ROOT/usr/lib/libraumfeld-1.0.so"
@@ -164,14 +165,19 @@ if len(o)==len(n) and o in d: open(lib+".new","wb").write(d.replace(o,n))
 PY
   [ -f "$LIB.new" ] && chmod --reference="$LIB" "$LIB.new" && mv "$LIB.new" "$LIB" && echo "  model-label -> Virtual Connector"
 fi
-touch "$ROOT/etc/hosts"; grep -q "$UPDATES_HOST" "$ROOT/etc/hosts" || printf '127.0.0.1 %s raumfeld.updates.teufel.de\n' "$UPDATES_HOST" >> "$ROOT/etc/hosts"
+# geen update-blokkade (meer): die liet de setup vastlopen, en we installeren al de nieuwste firmware
+sed -i "/$UPDATES_HOST/d" "$ROOT/etc/hosts" 2>/dev/null || true
 
 c "7) Services activeren"
 systemctl daemon-reload; systemctl enable vc-connector vc-ip-watch >/dev/null 2>&1 || true
 
-c "8) (optioneel) registreren als kamer"
-if [ -n "$SYSID" ]; then bash "$TOOLS/vc-setup.sh" "$ROOM" "$SYSID" || echo "  (registratie niet bevestigd — zie /tmp/vc-master.log)"
-else echo "  Geen system-id — registreer later:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\" <system-id>"; fi
+c "8) Registreren als kamer (system-id wordt automatisch van je Raumfeld-host overgenomen)"
+if [ -f "$ROOT/var/raumfeld-1.0/device-role.json" ]; then
+  echo "  al geregistreerd — overslaan"
+else
+  bash "$TOOLS/vc-setup.sh" "$ROOM" "$SYSID" \
+    || echo "  (registratie niet bevestigd — later opnieuw:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\")"
+fi
 
 c "9) persistente stack starten (via systemd — overleeft de installer/resume)"
 systemctl start vc-connector 2>/dev/null || true

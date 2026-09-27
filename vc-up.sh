@@ -67,7 +67,10 @@ if [ -f "$ROOT/raumfeld/renderer/renderer" ] && [ ! -f "$ROOT/raumfeld/renderer/
 else echo "  al aanwezig"; fi
 
 say "3) ALSA default -> $ALSADEV ($(card_kind "$VC_CARD"))"
-cp -f /etc/resolv.conf "$ROOT/etc/resolv.conf" 2>/dev/null || true
+# DNS: in de firmware is /etc/resolv.conf een symlink naar ../tmp/resolv.conf (normaal door connman gevuld);
+# 'cp' weigert door zo'n hangende symlink te schrijven, dus het doel direct vullen.
+mkdir -p "$ROOT/tmp"; cat /etc/resolv.conf > "$ROOT/tmp/resolv.conf" 2>/dev/null || true
+[ -L "$ROOT/etc/resolv.conf" ] || cat /etc/resolv.conf > "$ROOT/etc/resolv.conf" 2>/dev/null || true
 # volumeregelaar van deze kaart: bekende namen eerst, anders de eerste met pvolume
 pick_ctl(){ local c
   for c in Digital PCM Master Speaker Headphone; do
