@@ -8,7 +8,7 @@ ROOT=${ROOT:-/opt/rfconnector}
 HWID=9                                  # 9 = Raumfeld Connector 2
 # DAC autodetecteren: eerste playback-kaart-header die geen HDMI/vc4 is; overschrijf met ALSADEV=hw:N
 if [ -z "${ALSADEV:-}" ]; then
-  CARDNR=$(aplay -l 2>/dev/null | awk '/^card [0-9]+:/{num=$2; sub(/:.*/,"",num); if (tolower($0) !~ /hdmi|vc4/){print num; exit}}')
+  CARDNR=$(aplay -l 2>/dev/null | awk '/^card [0-9]+:/{num=$2; sub(/:.*/,"",num); if (tolower($0) !~ /hdmi|vc4|bcm2835|headphone/){print num; exit}}')
   ALSADEV="hw:${CARDNR:-1}"
 fi
 SOCK="$ROOT/run/dbus/system_bus_socket"
