@@ -8,7 +8,7 @@ its **own DAC** — shows up as a full Raumfeld renderer/room in the Raumfeld ap
 wget -qO- https://raw.githubusercontent.com/Simanias/virtual-raumfeld-connector/main/install.sh | sudo bash
 ```
 The installer asks for: **audio output** (an external/USB DAC, the onboard 3.5 mm jack, HDMI, or enable a
-DAC HAT overlay — then it reboots once and continues by itself), **device name** (e.g. `Virtual
+DAC HAT overlay — then it reboots once and continues by itself; with a DAC the onboard jack is switched off, set `VC_KEEP_ONBOARD=1` to keep it), **device name** (e.g. `Virtual
 Connector`), **room name**, and your **Raumfeld system-id**. After that everything runs and **starts
 automatically on reboot**. The choice is stored by card *name*, so it survives card renumbering.
 

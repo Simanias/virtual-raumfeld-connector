@@ -90,13 +90,19 @@ if [ "$RESUME" = 0 ]; then
     echo "CARD=$(printf %q "$CARD")"; echo "OVERLAY=$(printf %q "$OVERLAY")"; } > "$CONF"
 
   BC=$(bootcfg)
+  # bij een DAC (HAT-overlay of externe/USB-kaart) de onboard-jack uitzetten, tenzij VC_KEEP_ONBOARD=1
+  if [ -z "${VC_KEEP_ONBOARD:-}" ] && { [ -n "$OVERLAY" ] || { [ "$CARD" != auto ] && [ "$(card_kind "$CARD")" = extern ]; }; }; then
+    if grep -q "^dtparam=audio=on" "$BC"; then sed -i 's/^dtparam=audio=on/dtparam=audio=off/' "$BC"
+    elif ! grep -q "^dtparam=audio=" "$BC"; then echo "dtparam=audio=off" >> "$BC"; fi
+    echo "  onboard audio uitgezet in $BC (je gebruikt een DAC; effect na de volgende reboot)"
+  fi
   if [ -n "$OVERLAY" ] && grep -q "^dtoverlay=$OVERLAY" "$BC"; then
     echo "  overlay $OVERLAY staat al in $BC — geen reboot nodig."; OVERLAY=""
   fi
   if [ -n "$OVERLAY" ]; then
     c "3) DAC-overlay aanzetten ($OVERLAY) + reboot"
     echo "dtoverlay=$OVERLAY" >> "$BC"
-    echo "  overlay in $BC gezet (onboard audio blijft beschikbaar)."
+    echo "  overlay in $BC gezet."
     # resume-service die na de reboot de installatie afmaakt
     cat > /etc/systemd/system/$RESUME_SVC.service <<EOF
 [Unit]
