@@ -8,3 +8,8 @@ rootfs/
 *.log
 *.bak
 .DS_Store
+# old local prototypes (not part of the project)
+README-virtualtools.md
+start-connector.sh
+stop-connector.sh
+vc-run.sh
