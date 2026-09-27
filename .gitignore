@@ -1,10 +1,10 @@
-# Nooit firmware / rootfs meecommitten (Teufel-copyright; installer haalt 'm officieel op)
+# Never commit firmware / rootfs (Teufel copyright; the installer fetches it from the official server)
 *.img
 *.tar
 *.tar.*
 connector-rootfs*
 rootfs/
-# lokale rommel
+# local clutter
 *.log
 *.bak
 .DS_Store

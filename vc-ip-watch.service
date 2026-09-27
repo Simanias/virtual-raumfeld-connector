@@ -1,5 +1,5 @@
 [Unit]
-Description=Virtuele Raumfeld Connector - IP-watcher (herstart stack bij IP-wijziging)
+Description=Virtual Raumfeld Connector - IP watcher (restarts the stack when the IP changes)
 After=vc-connector.service network-online.target
 Wants=network-online.target
 

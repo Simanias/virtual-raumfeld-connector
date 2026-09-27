@@ -1,6 +1,6 @@
 #!/bin/bash
-# Start master-process in de chroot (virtueel), met session-bus + key-creator.
-# Bedoeld om gedetacht te draaien:  sudo setsid bash /tmp/vc-master.sh </dev/null >/tmp/vc-master.log 2>&1 &
+# Start master-process in the chroot (virtualised), with a session bus + key creator.
+# Meant to run detached:  sudo setsid bash /opt/virtualtools/vc-master.sh </dev/null >/tmp/vc-master.log 2>&1 &
 ROOT=/opt/rfconnector
 exec chroot "$ROOT" /usr/bin/env -i \
   PATH=/usr/sbin:/usr/bin:/sbin:/bin \

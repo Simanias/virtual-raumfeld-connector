@@ -1,11 +1,11 @@
 #!/bin/bash
-# Virtuele Raumfeld Connector — installer voor Raspberry Pi OS 32-bit (armhf) Lite.
+# Virtual Raumfeld Connector — installer for Raspberry Pi OS 32-bit (armhf) Lite.
 #
 #   wget -qO- https://raw.githubusercontent.com/Simanias/virtual-raumfeld-connector/main/install.sh | sudo bash
 #
-# Draait de Raumfeld Connector-firmware (userspace) in een chroot, met je eigen DAC als
-# volwaardige Raumfeld-renderer. Firmware wordt bij installatie officieel bij Teufel opgehaald.
-# Kan een DAC-overlay aanzetten en dan automatisch dóórgaan na een reboot (--resume).
+# Runs the Raumfeld Connector firmware (userspace) in a chroot, with your own DAC as a full Raumfeld
+# renderer. The firmware is fetched from Teufel's official update server during installation.
+# Can enable a DAC overlay and then continue automatically after a reboot (--resume).
 set -uo pipefail
 
 REPO_RAW="${VC_REPO_RAW:-https://raw.githubusercontent.com/Simanias/virtual-raumfeld-connector/main}"
@@ -19,91 +19,91 @@ SRCDIR="$(cd "$(dirname "${BASH_SOURCE[0]:-/dev/null}")" 2>/dev/null && pwd || e
 FILES="connman-stub.py vc-up.sh vc-down.sh vc-master.sh vc-volume-bridge.py vc-ip-watch.sh vc-setup.sh"
 SERVICES="vc-connector.service vc-ip-watch.service"
 RESUME=0; [ "${1:-}" = "--resume" ] && RESUME=1
-[ -n "${VC_DEBUG:-}" ] && set -x    # uitgebreide trace voor debugging
+[ -n "${VC_DEBUG:-}" ] && set -x    # verbose trace for debugging
 
 c(){ printf '\n\033[1;36m== %s ==\033[0m\n' "$*"; }
-# ask <prompt> <default> [ENV_KEY] : env-var (indien gezet) wint -> non-interactieve/headless installs
+# ask <prompt> <default> [ENV_KEY] : an env var (if set) wins -> non-interactive/headless installs
 ask(){ local p="$1" d="${2:-}" k="${3:-}" a=""; if [ -n "$k" ]; then eval "a=\${$k:-}"; [ -n "$a" ] && { echo "$a"; return; }; fi; if [ -r /dev/tty ]; then read -r -p "$p" a </dev/tty || true; fi; echo "${a:-$d}"; }
 fetch(){ if [ -f "$SRCDIR/$1" ]; then cp -f "$SRCDIR/$1" "$2"; else curl -fsSL "$REPO_RAW/$1" -o "$2"; fi; }
 bootcfg(){ [ -f /boot/firmware/config.txt ] && echo /boot/firmware/config.txt || echo /boot/config.txt; }
-# audio-kaarten op NAAM (stabiel over reboots heen) + soort: extern / onboard / hdmi
+# sound cards by NAME (stable across reboots) + kind: external / onboard / hdmi
 card_ids(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/{print $3}' | awk '!s[$0]++'; }
 card_desc(){ aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | sed -E 's/^card [0-9]+: [^ ]+ \[([^]]*)\].*/\1/'; }
 card_kind(){ case "$(aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | tr 'A-Z' 'a-z')" in
-  *hdmi*|*vc4*) echo hdmi;; *bcm2835*|*headphone*) echo onboard;; *) echo extern;; esac; }
-auto_card(){ local k c; for k in extern onboard hdmi; do for c in $(card_ids); do
+  *hdmi*|*vc4*) echo hdmi;; *bcm2835*|*headphone*) echo onboard;; *) echo external;; esac; }
+auto_card(){ local k c; for k in external onboard hdmi; do for c in $(card_ids); do
   [ "$(card_kind "$c")" = "$k" ] && { echo "$c"; return; }; done; done; }
 
-[ "$(id -u)" = 0 ] || { echo "Draai als root:  sudo bash install.sh"; exit 1; }
+[ "$(id -u)" = 0 ] || { echo "Run as root:  sudo bash install.sh"; exit 1; }
 mkdir -p "$TOOLS"
 
-# ---------- Fase 1: keuzes + eventueel DAC-overlay + reboot ----------
+# ---------- Phase 1: choices + optional DAC overlay + reboot ----------
 if [ "$RESUME" = 0 ]; then
-  c "0) Checks + basispakketten"
+  c "0) Checks + base packages"
   arch=$(dpkg --print-architecture 2>/dev/null || uname -m)
-  case "$arch" in armhf|armv7l) echo "  arch $arch OK";; *) echo "  LET OP: verwacht 32-bit armhf; '$arch' gevonden — rootfs draait mogelijk niet.";; esac
+  case "$arch" in armhf|armv7l) echo "  arch $arch OK";; *) echo "  WARNING: expected 32-bit armhf, found '$arch' — the rootfs may not run.";; esac
   apt-get update -qq && apt-get install -y -qq alsa-utils curl xz-utils python3-dbus python3-gi coreutils util-linux >/dev/null
   echo "  ok"
 
-  c "1) Audio-uitgang kiezen"
+  c "1) Choose audio output"
   CARD=""; OVERLAY=""
-  if [ -n "${VC_CARD:-}" ]; then CARD="$VC_CARD"; echo "  (env) kaart $CARD"
+  if [ -n "${VC_CARD:-}" ]; then CARD="$VC_CARD"; echo "  (env) card $CARD"
   elif [ -n "${VC_OVERLAY:-}" ]; then OVERLAY="$VC_OVERLAY"; CARD=auto; echo "  (env) overlay $OVERLAY"
   else
     i=0; dflt=""; dflt_on=""
-    echo "Aanwezige audio-uitgangen:"
+    echo "Available audio outputs:"
     for id in $(card_ids); do
       i=$((i+1)); kind=$(card_kind "$id")
-      case $kind in onboard) lbl="onboard 3,5mm-jack";; hdmi) lbl="HDMI (experimenteel)";; *) lbl="externe DAC/USB";; esac
+      case $kind in onboard) lbl="onboard 3.5mm jack";; hdmi) lbl="HDMI (experimental)";; *) lbl="external DAC/USB";; esac
       printf "  %d) %-16s %s  [%s]\n" "$i" "$id" "$(card_desc "$id")" "$lbl"
       eval "opt_$i=card:$id"
-      [ -z "$dflt" ] && [ "$kind" = extern ] && dflt=$i
+      [ -z "$dflt" ] && [ "$kind" = external ] && dflt=$i
       [ -z "$dflt_on" ] && [ "$kind" = onboard ] && dflt_on=$i
     done
-    [ "$i" = 0 ] && echo "  (geen)"
-    echo "Of een DAC-HAT inschakelen (zet de overlay aan; daarna automatische reboot):"
+    [ "$i" = 0 ] && echo "  (none)"
+    echo "Or enable a DAC HAT (turns on its overlay, followed by an automatic reboot):"
     for ov in "hifiberry-dacplusadc|HiFiBerry DAC+ ADC" "hifiberry-dacplus|HiFiBerry DAC+ / DAC+ Pro" \
               "hifiberry-dac|HiFiBerry DAC (PCM5102A)" "hifiberry-digi|HiFiBerry Digi / Digi+" \
-              "iqaudio-dacplus|IQaudio DAC+" "other|Andere overlay (zelf typen)"; do
+              "iqaudio-dacplus|IQaudio DAC+" "other|Other overlay (type it yourself)"; do
       i=$((i+1)); printf "  %d) %s\n" "$i" "${ov#*|}"; eval "opt_$i=overlay:${ov%%|*}"
     done
-    : "${dflt:=${dflt_on:-1}}"                 # standaard: externe DAC, anders onboard
-    sel=$(ask "Keuze [$dflt]: " "$dflt")
+    : "${dflt:=${dflt_on:-1}}"                 # default: external DAC, otherwise onboard
+    sel=$(ask "Choice [$dflt]: " "$dflt")
     eval "choice=\${opt_$sel:-}"
     case "$choice" in
       card:*)        CARD=${choice#card:} ;;
-      overlay:other) OVERLAY=$(ask "Overlay-naam: " ""); CARD=auto ;;
+      overlay:other) OVERLAY=$(ask "Overlay name: " ""); CARD=auto ;;
       overlay:*)     OVERLAY=${choice#overlay:}; CARD=auto ;;
-      *)             echo "  ongeldige keuze — automatisch kiezen"; CARD=auto ;;
+      *)             echo "  invalid choice — choosing automatically"; CARD=auto ;;
     esac
-    echo "  gekozen: ${OVERLAY:+overlay $OVERLAY → }${CARD}"
+    echo "  selected: ${OVERLAY:+overlay $OVERLAY → }${CARD}"
   fi
 
-  c "2) Naam"
-  echo "Dit wordt de naam van de kamer/speler in de Raumfeld-app (later ook in de app te wijzigen)."
-  ROOM=$(ask "Kamernaam [Virtual Connector]: " "${VC_DEVNAME:-Virtual Connector}" VC_ROOM)
+  c "2) Name"
+  echo "This becomes the name of the room/player in the Raumfeld app (can also be changed later in the app)."
+  ROOM=$(ask "Room name [Virtual Connector]: " "${VC_DEVNAME:-Virtual Connector}" VC_ROOM)
   DEVNAME="$ROOM"
-  SYSID="${VC_SYSID:-}"      # normaal leeg: het toestel neemt het system-id automatisch over van je host
+  SYSID="${VC_SYSID:-}"      # normally empty: the device adopts the system-id from your host automatically
 
-  # keuzes bewaren voor (resume na) reboot
+  # keep the choices for the resume after the reboot
   { echo "DEVNAME=$(printf %q "$DEVNAME")"; echo "ROOM=$(printf %q "$ROOM")"; echo "SYSID=$(printf %q "$SYSID")"
     echo "CARD=$(printf %q "$CARD")"; echo "OVERLAY=$(printf %q "$OVERLAY")"; } > "$CONF"
 
   BC=$(bootcfg)
-  # bij een DAC (HAT-overlay of externe/USB-kaart) de onboard-jack uitzetten, tenzij VC_KEEP_ONBOARD=1
-  if [ -z "${VC_KEEP_ONBOARD:-}" ] && { [ -n "$OVERLAY" ] || { [ "$CARD" != auto ] && [ "$(card_kind "$CARD")" = extern ]; }; }; then
+  # with a DAC (HAT overlay or external/USB card) switch off the onboard jack, unless VC_KEEP_ONBOARD=1
+  if [ -z "${VC_KEEP_ONBOARD:-}" ] && { [ -n "$OVERLAY" ] || { [ "$CARD" != auto ] && [ "$(card_kind "$CARD")" = external ]; }; }; then
     if grep -q "^dtparam=audio=on" "$BC"; then sed -i 's/^dtparam=audio=on/dtparam=audio=off/' "$BC"
     elif ! grep -q "^dtparam=audio=" "$BC"; then echo "dtparam=audio=off" >> "$BC"; fi
-    echo "  onboard audio uitgezet in $BC (je gebruikt een DAC; effect na de volgende reboot)"
+    echo "  onboard audio switched off in $BC (you are using a DAC; takes effect after the next reboot)"
   fi
   if [ -n "$OVERLAY" ] && grep -q "^dtoverlay=$OVERLAY" "$BC"; then
-    echo "  overlay $OVERLAY staat al in $BC — geen reboot nodig."; OVERLAY=""
+    echo "  overlay $OVERLAY is already in $BC — no reboot needed."; OVERLAY=""
   fi
   if [ -n "$OVERLAY" ]; then
-    c "3) DAC-overlay aanzetten ($OVERLAY) + reboot"
+    c "3) Enable DAC overlay ($OVERLAY) + reboot"
     echo "dtoverlay=$OVERLAY" >> "$BC"
-    echo "  overlay in $BC gezet."
-    # resume-service die na de reboot de installatie afmaakt
+    echo "  overlay added to $BC."
+    # resume service that finishes the installation after the reboot
     cat > /etc/systemd/system/$RESUME_SVC.service <<EOF
 [Unit]
 Description=Virtual Connector installer resume
@@ -119,14 +119,14 @@ ExecStart=/bin/bash -c 'curl -fsSL $REPO_RAW/install.sh | bash -s -- --resume'
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload; systemctl enable $RESUME_SVC >/dev/null 2>&1
-    echo "  installatie gaat automatisch verder na de reboot. Rebooten in 5s..."; sleep 5; reboot; exit 0
+    echo "  the installation continues automatically after the reboot. Rebooting in 5s..."; sleep 5; reboot; exit 0
   fi
 fi
 
-# ---------- Fase 2: installeren (inline of via resume na reboot) ----------
+# ---------- Phase 2: install (inline, or via the resume after the reboot) ----------
 [ -f "$CONF" ] && . "$CONF"
 : "${DEVNAME:=Virtual Connector}"; : "${ROOM:=$DEVNAME}"; : "${SYSID:=}"; : "${CARD:=}"; : "${OVERLAY:=}"
-# gekozen audio-uitgang vastleggen op kaartNAAM (bij overlay-keuze: de nieuwe DAC na de reboot)
+# store the chosen audio output by card NAME (after an overlay choice: the new DAC after the reboot)
 case "$CARD" in
   ''|auto)  CARD=$(auto_card) ;;
   *[!0-9]*) ;;
@@ -134,15 +134,15 @@ case "$CARD" in
 esac
 [ -n "$CARD" ] || CARD=$(auto_card)
 printf 'VC_CARD=%q\n' "$CARD" > "$TOOLS/vc.conf"
-echo "  audio-uitgang: $CARD ($(card_kind "$CARD")) -> $TOOLS/vc.conf"
+echo "  audio output: $CARD ($(card_kind "$CARD")) -> $TOOLS/vc.conf"
 
-c "4) Pakketten + firmware (Connector 2 / HWID $HWID) van Teufel"
+c "4) Packages + firmware (Connector 2 / HWID $HWID) from Teufel"
 apt-get install -y -qq python3-dbus python3-gi xz-utils curl alsa-utils >/dev/null 2>&1 || true
-if [ -d "$ROOT/raumfeld" ]; then echo "  rootfs bestaat al — overslaan."; else
+if [ -d "$ROOT/raumfeld" ]; then echo "  rootfs already present — skipping."; else
   mkdir -p "$ROOT"
   hash=$(curl -fsSL "https://$UPDATES_HOST/$HWID.updates" | tr -d '[] \t\r' | head -1)
-  [ -n "$hash" ] || { echo "  kon firmware-index niet lezen"; exit 1; }
-  echo "  blob $hash — downloaden + uitpakken ..."
+  [ -n "$hash" ] || { echo "  could not read the firmware index"; exit 1; }
+  echo "  blob $hash — downloading + extracting ..."
   curl -fsSL "https://$UPDATES_HOST/$hash" | xz -d | tar -x -C "$ROOT"
 fi
 
@@ -151,7 +151,7 @@ for f in $FILES; do fetch "$f" "$TOOLS/$f"; done
 chmod +x "$TOOLS"/*.sh
 for s in $SERVICES; do fetch "$s" "/etc/systemd/system/$s"; done
 
-c "6) Naam + model-label (audio -> $CARD)"
+c "6) Name + model label (audio -> $CARD)"
 mkdir -p "$ROOT/var/raumfeld-1.0"
 printf '[GLOBAL]\nrenderer-name=%s\n' "$DEVNAME" > "$ROOT/var/raumfeld-1.0/renderer-config.ini"
 LIB="$ROOT/usr/lib/libraumfeld-1.0.so"
@@ -163,32 +163,32 @@ lib=sys.argv[1]; d=open(lib,"rb").read()
 o=b"Raumfeld Connector\x00"; n=b"Virtual Connector\x00\x00"
 if len(o)==len(n) and o in d: open(lib+".new","wb").write(d.replace(o,n))
 PY
-  [ -f "$LIB.new" ] && chmod --reference="$LIB" "$LIB.new" && mv "$LIB.new" "$LIB" && echo "  model-label -> Virtual Connector"
+  [ -f "$LIB.new" ] && chmod --reference="$LIB" "$LIB.new" && mv "$LIB.new" "$LIB" && echo "  model label -> Virtual Connector"
 fi
-# geen update-blokkade (meer): die liet de setup vastlopen, en we installeren al de nieuwste firmware
+# no update block (anymore): it made the setup hang, and we already install the newest firmware
 sed -i "/$UPDATES_HOST/d" "$ROOT/etc/hosts" 2>/dev/null || true
 
-c "7) Services activeren"
+c "7) Enable services"
 systemctl daemon-reload; systemctl enable vc-connector vc-ip-watch >/dev/null 2>&1 || true
 
-c "8) Registreren als kamer (system-id wordt automatisch van je Raumfeld-host overgenomen)"
+c "8) Register as a room (the system-id is adopted automatically from your Raumfeld host)"
 if [ -f "$ROOT/var/raumfeld-1.0/device-role.json" ]; then
-  echo "  al geregistreerd — overslaan"
+  echo "  already registered — skipping"
 else
   bash "$TOOLS/vc-setup.sh" "$ROOM" "$SYSID" \
-    || echo "  (registratie niet bevestigd — later opnieuw:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\")"
+    || echo "  (registration not confirmed — retry later:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\")"
 fi
 
-c "9) persistente stack starten (via systemd — overleeft de installer/resume)"
+c "9) Start the persistent stack (via systemd — survives the installer/resume)"
 systemctl start vc-connector 2>/dev/null || true
 systemctl start vc-ip-watch 2>/dev/null || true
 sleep 10
 
-# resume-service opruimen
+# clean up the resume service
 systemctl disable $RESUME_SVC >/dev/null 2>&1 || true; rm -f /etc/systemd/system/$RESUME_SVC.service; systemctl daemon-reload 2>/dev/null || true
 
-c "KLAAR"
+c "DONE"
 IP=$(ip -4 -o addr show "$(ip route|awk '/^default/{print $5;exit}')" 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
-echo "Virtuele Connector '$DEVNAME' draait (IP ${IP:-?}), audio -> $CARD ($(card_kind "$CARD")), start automatisch na reboot."
-echo "Andere audio-uitgang later? Pas VC_CARD aan in $TOOLS/vc.conf en: sudo systemctl restart vc-connector"
-echo "TIP: geef de Pi een vast IP (DHCP-reservering) om her-ontdek-hikjes te voorkomen."
+echo "Virtual Connector '$DEVNAME' is running (IP ${IP:-?}), audio -> $CARD ($(card_kind "$CARD")), starts automatically after a reboot."
+echo "Different audio output later? Change VC_CARD in $TOOLS/vc.conf and run: sudo systemctl restart vc-connector"
+echo "TIP: give the Pi a fixed IP (DHCP reservation) to avoid rediscovery hiccups."

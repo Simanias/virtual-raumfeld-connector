@@ -17,6 +17,9 @@ It then registers the Pi as a room in the Raumfeld system on your network. **No 
 the Pi adopts the system-id from your Raumfeld host automatically during registration. After that
 everything runs and **starts automatically on reboot**.
 
+In the app the device shows up with model **Virtual Connector**; its player follows the standard Raumfeld
+naming, `Connector <room name>` (like `Speaker Bar` or `Connector Kitchen`).
+
 Headless/non-interactive: `VC_CARD=<card name>` or `VC_OVERLAY=<overlay>`, `VC_ROOM="<name>"`
 (`VC_DEBUG=1` for a trace).
 

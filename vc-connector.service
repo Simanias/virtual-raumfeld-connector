@@ -1,5 +1,5 @@
 [Unit]
-Description=Virtuele Raumfeld Connector (chroot + connman-stub + volume-brug)
+Description=Virtual Raumfeld Connector (chroot + connman stub + volume bridge)
 After=network-online.target sound.target
 Wants=network-online.target
 

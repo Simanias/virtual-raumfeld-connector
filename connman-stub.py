@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
-# Minimale ConnMan dbus-stub voor de virtuele Raumfeld Connector.
-# Levert net.connman op de system-bus zodat master-process' ConnmanManager tevreden is
-# ("online" ethernet-service), ZONDER de echte netwerk-interface aan te raken.
+# Minimal ConnMan D-Bus stub for the Virtual Raumfeld Connector.
+# Provides net.connman on the chroot's system bus so master-process' ConnmanManager is satisfied
+# (an "online" ethernet service), WITHOUT touching the real network interface.
 #
-# Draai op de host, gericht op de chroot-system-bus:
-#   sudo DBUS_SYSTEM_BUS_ADDRESS=unix:path=/opt/rfconnector/run/dbus/system_bus_socket \
-#        python3 connman-stub.py
+# Runs on the host, pointed at the chroot's system bus (vc-up.sh does this):
+#   sudo python3 connman-stub.py unix:path=/opt/rfconnector/run/dbus/system_bus_socket
 #
-# Vereist: python3-dbus + python3-gi  (sudo apt install -y python3-dbus python3-gi)
+# Requires: python3-dbus + python3-gi  (sudo apt install -y python3-dbus python3-gi)
 import os, sys, dbus, dbus.bus, dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 
-# Echte netwerkgegevens van de Pi (via env te overschrijven). De stub MOET een MAC opgeven,
-# anders negeert master-process de service ("doesn't have a MAC-address - ignoring").
+# The Pi's real network details (passed in via env by vc-up.sh). The stub MUST report a MAC,
+# otherwise master-process ignores the service ("doesn't have a MAC-address - ignoring").
 IFACE   = os.environ.get("VC_IFACE",   "wlan0")
-IPADDR  = os.environ.get("VC_IP",      "192.168.1.218")
+IPADDR  = os.environ.get("VC_IP",      "192.168.0.2")
 NETMASK = os.environ.get("VC_NETMASK", "255.255.255.0")
-GATEWAY = os.environ.get("VC_GW",      "192.168.1.1")
-MAC     = os.environ.get("VC_MAC",     "b8:27:eb:02:8f:ac")
+GATEWAY = os.environ.get("VC_GW",      "192.168.0.1")
+MAC     = os.environ.get("VC_MAC",     "02:00:00:00:00:01")
 
 _macflat = MAC.replace(":", "").lower()
 SVC  = "/net/connman/service/ethernet_%s_cable" % _macflat
@@ -63,9 +62,9 @@ def props_tech():
         "Connected": dbus.Boolean(True),
     }, signature="sv")
 
-# Stateful wifi-technology: master-process zet tijdens setup Tethering/Powered en
-# WACHT tot de technology die staat terugmeldt ("correct power state"). We slaan
-# SetProperty op en geven 't terug, zodat de nep-AP "up" komt.
+# Stateful wifi technology: during setup master-process sets Tethering/Powered and WAITS until
+# the technology reports that state back ("correct power state"). We store SetProperty and return
+# it, so the fake access point comes "up".
 _wifi = {"Type": "wifi", "Name": "WiFi", "Powered": True, "Connected": False,
          "Tethering": False, "TetheringIdentifier": "Raumfeld Setup"}
 
@@ -110,7 +109,7 @@ class Service(dbus.service.Object):
     @dbus.service.method("net.connman.Service", in_signature="")
     def Disconnect(self): pass
     @dbus.service.method("net.connman.Service", in_signature="")
-    def Remove(self): pass                       # 'vergeten' -> no-op (ethernet blijft)
+    def Remove(self): pass                       # 'forget' -> no-op (ethernet stays)
     @dbus.service.method("net.connman.Service", in_signature="sv")
     def SetProperty(self, name, value): pass
     @dbus.service.method("net.connman.Service", in_signature="s")
@@ -136,24 +135,24 @@ class TechnologyWifi(dbus.service.Object):
         n = str(name)
         v = bool(value) if isinstance(value, dbus.Boolean) else (str(value) if isinstance(value, dbus.String) else value)
         _wifi[n] = v
-        if n == "Tethering":                 # AP aan -> ook 'verbonden' melden
+        if n == "Tethering":                 # AP on -> also report 'connected'
             _wifi["Connected"] = bool(v)
         self.PropertyChanged(n, _to_variant(_wifi[n]))
         if n == "Tethering":
             self.PropertyChanged("Connected", _to_variant(_wifi["Connected"]))
     @dbus.service.method("net.connman.Technology", in_signature="")
-    def Scan(self): pass                               # geen echte scan
+    def Scan(self): pass                               # no real scan
     @dbus.service.signal("net.connman.Technology", signature="sv")
     def PropertyChanged(self, name, value): pass
 
 if __name__ == "__main__":
     DBusGMainLoop(set_as_default=True)
-    # Expliciet adres als argv[1] (bijv. unix:path=/opt/rfconnector/run/dbus/system_bus_socket),
-    # anders de standaard system-bus. BusConnection doet zelf de Hello-handshake.
+    # Explicit address as argv[1] (e.g. unix:path=/opt/rfconnector/run/dbus/system_bus_socket),
+    # otherwise the default system bus. BusConnection performs the Hello handshake itself.
     addr = sys.argv[1] if len(sys.argv) > 1 else None
     bus = dbus.bus.BusConnection(addr) if addr else dbus.SystemBus()
-    # Referenties VASTHOUDEN — anders GC't dbus-python de naam/objecten meteen weg.
+    # KEEP the references — otherwise dbus-python garbage-collects the name/objects right away.
     name = dbus.service.BusName("net.connman", bus, do_not_queue=True)
     mgr, svc, tech, techw = Manager(bus), Service(bus), Technology(bus), TechnologyWifi(bus)
-    print("connman-stub: net.connman geregistreerd op %s (online ethernet)" % (addr or "system-bus"), flush=True)
+    print("connman-stub: net.connman registered on %s (online ethernet)" % (addr or "system-bus"), flush=True)
     GLib.MainLoop().run()
