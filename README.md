@@ -1,9 +1,7 @@
 # Virtual Raumfeld Connector
 
 Run the Raumfeld **Connector** firmware (userspace) in a chroot on a Raspberry Pi, so the Pi — with
-its **own DAC** — shows up as a full Raumfeld renderer/room in the Raumfeld app, multiroom, Home
-Assistant and Music Assistant. No small-driver/DSP limits of a One S, and it **never touches the Pi's
-network interface**.
+its **own DAC** — shows up as a full Raumfeld renderer/room in the Raumfeld app and compatible with Raumfeld multiroom.
 
 ## Install (Raspberry Pi OS 32-bit Lite)
 ```bash
