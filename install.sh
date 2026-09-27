@@ -19,6 +19,7 @@ SRCDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo /dev/nu
 FILES="connman-stub.py vc-up.sh vc-down.sh vc-master.sh vc-volume-bridge.py vc-ip-watch.sh vc-setup.sh raumfeld-setup.json"
 SERVICES="vc-connector.service vc-ip-watch.service"
 RESUME=0; [ "${1:-}" = "--resume" ] && RESUME=1
+[ -n "${VC_DEBUG:-}" ] && set -x    # uitgebreide trace voor debugging
 
 c(){ printf '\n\033[1;36m== %s ==\033[0m\n' "$*"; }
 # ask <prompt> <default> [ENV_KEY] : env-var (indien gezet) wint -> non-interactieve/headless installs
