@@ -21,7 +21,8 @@ SERVICES="vc-connector.service vc-ip-watch.service"
 RESUME=0; [ "${1:-}" = "--resume" ] && RESUME=1
 
 c(){ printf '\n\033[1;36m== %s ==\033[0m\n' "$*"; }
-ask(){ local p="$1" d="${2:-}" a=""; if [ -r /dev/tty ]; then read -r -p "$p" a </dev/tty || true; fi; echo "${a:-$d}"; }
+# ask <prompt> <default> [ENV_KEY] : env-var (indien gezet) wint -> non-interactieve/headless installs
+ask(){ local p="$1" d="${2:-}" k="${3:-}" a=""; if [ -n "$k" ]; then eval "a=\${$k:-}"; [ -n "$a" ] && { echo "$a"; return; }; fi; if [ -r /dev/tty ]; then read -r -p "$p" a </dev/tty || true; fi; echo "${a:-$d}"; }
 fetch(){ if [ -f "$SRCDIR/$1" ]; then cp -f "$SRCDIR/$1" "$2"; else curl -fsSL "$REPO_RAW/$1" -o "$2"; fi; }
 bootcfg(){ [ -f /boot/firmware/config.txt ] && echo /boot/firmware/config.txt || echo /boot/config.txt; }
 dac_card(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/{n=$2; sub(/:.*/,"",n); if (tolower($0)!~/hdmi|vc4|bcm2835|headphone/){print n; exit}}'; }
@@ -39,8 +40,10 @@ if [ "$RESUME" = 0 ]; then
 
   c "1) Audio-device kiezen"
   echo "Kaarten nu aanwezig:"; aplay -l 2>/dev/null | grep '^card' || echo "  (geen DAC — kies hieronder een overlay)"
-  CARD=$(dac_card); OVERLAY=""
-  if [ -n "$CARD" ]; then
+  CARD=""; OVERLAY=""
+  if [ -n "${VC_CARD:-}" ]; then CARD="$VC_CARD"; echo "  (env) card $CARD"
+  elif [ -n "${VC_OVERLAY:-}" ]; then OVERLAY="$VC_OVERLAY"; echo "  (env) overlay $OVERLAY"
+  elif CARD=$(dac_card); [ -n "$CARD" ]; then
     echo "  DAC gevonden op card $CARD."
     keep=$(ask "Deze gebruiken? [J/n] of typ een overlay-naam: " "J")
     case "$keep" in J|j|"") ;; N|n) CARD=""; OVERLAY=$(ask "Overlay-naam (bijv. hifiberry-dacplusadc): " "");; *) OVERLAY="$keep"; CARD="";; esac
@@ -62,10 +65,10 @@ if [ "$RESUME" = 0 ]; then
   fi
 
   c "2) Overige keuzes"
-  DEVNAME=$(ask "Device-naam [Virtual Connector]: " "Virtual Connector")
-  ROOM=$(ask "Kamernaam in Raumfeld [$DEVNAME]: " "$DEVNAME")
+  DEVNAME=$(ask "Device-naam [Virtual Connector]: " "Virtual Connector" VC_DEVNAME)
+  ROOM=$(ask "Kamernaam in Raumfeld [$DEVNAME]: " "$DEVNAME" VC_ROOM)
   echo "system-id = de systeem-UUID van je Raumfeld-systeem (op een toestel: /var/raumfeld-1.0/system-id)."
-  SYSID=$(ask "Raumfeld system-id (leeg = later/automatisch): " "")
+  SYSID=$(ask "Raumfeld system-id (leeg = later/automatisch): " "" VC_SYSID)
 
   # keuzes bewaren voor (resume na) reboot
   { echo "DEVNAME=$(printf %q "$DEVNAME")"; echo "ROOM=$(printf %q "$ROOM")"; echo "SYSID=$(printf %q "$SYSID")"
