@@ -6,11 +6,24 @@ set -u
 TOOLS=${TOOLS:-/opt/virtualtools}      # systeembrede locatie van deze tools
 ROOT=${ROOT:-/opt/rfconnector}
 HWID=9                                  # 9 = Raumfeld Connector 2
-# DAC autodetecteren: eerste playback-kaart-header die geen HDMI/vc4 is; overschrijf met ALSADEV=hw:N
-if [ -z "${ALSADEV:-}" ]; then
-  CARDNR=$(aplay -l 2>/dev/null | awk '/^card [0-9]+:/{num=$2; sub(/:.*/,"",num); if (tolower($0) !~ /hdmi|vc4|bcm2835|headphone/){print num; exit}}')
-  ALSADEV="hw:${CARDNR:-1}"
+# --- audio-uitgang: gekozen bij installatie (vc.conf, op kaartNAAM), anders autodetect ---
+[ -f "$TOOLS/vc.conf" ] && . "$TOOLS/vc.conf"          # VC_CARD=<kaartnaam>, optioneel VC_CTL=<mixer>
+card_ids(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/{print $3}' | awk '!s[$0]++'; }
+card_kind(){ case "$(aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | tr 'A-Z' 'a-z')" in
+  *hdmi*|*vc4*) echo hdmi;; *bcm2835*|*headphone*) echo onboard;; *) echo extern;; esac; }
+auto_card(){ local k c; for k in extern onboard hdmi; do for c in $(card_ids); do
+  [ "$(card_kind "$c")" = "$k" ] && { echo "$c"; return; }; done; done; }
+# override: ALSADEV=hw:N / hw:NAAM
+if [ -n "${ALSADEV:-}" ]; then VC_CARD=${ALSADEV#hw:}; VC_CARD=${VC_CARD#CARD=}; fi
+case "${VC_CARD:-}" in
+  ''|auto) VC_CARD=$(auto_card) ;;
+  *[!0-9]*) ;;                                           # al een naam
+  *) VC_CARD=$(aplay -l 2>/dev/null | awk -v n="$VC_CARD" '$1=="card" && $2==n":"{print $3; exit}') ;;
+esac
+if ! card_ids | grep -qx "${VC_CARD:-none}"; then
+  echo "  !! gekozen audio-kaart '${VC_CARD:-}' niet gevonden — autodetect"; VC_CARD=$(auto_card)
 fi
+ALSADEV="hw:$VC_CARD"
 SOCK="$ROOT/run/dbus/system_bus_socket"
 STUB=$TOOLS/connman-stub.py; [ -f "$STUB" ] || STUB=/tmp/connman-stub.py
 MLOG=/tmp/vc-master.log
@@ -50,12 +63,31 @@ if [ -f "$ROOT/raumfeld/renderer/renderer" ] && [ ! -f "$ROOT/raumfeld/renderer/
   echo "  wrapper geplaatst"
 else echo "  al aanwezig"; fi
 
-say "3) ALSA default -> $ALSADEV"
+say "3) ALSA default -> $ALSADEV ($(card_kind "$VC_CARD"))"
 cp -f /etc/resolv.conf "$ROOT/etc/resolv.conf" 2>/dev/null || true
-cat > "$ROOT/etc/asound.conf" <<EOF
-pcm.!default { type plug; slave.pcm "$ALSADEV" }
-ctl.!default { type hw; card ${ALSADEV#hw:} }
+# volumeregelaar van deze kaart: bekende namen eerst, anders de eerste met pvolume
+pick_ctl(){ local c
+  for c in Digital PCM Master Speaker Headphone; do
+    amixer -c "$1" sget "$c" 2>/dev/null | grep -q "Capabilities:.*pvolume" && { echo "$c"; return; }
+  done
+  amixer -c "$1" scontents 2>/dev/null | awk '/^Simple mixer control/{n=$0} /Capabilities:.*pvolume/{sub(/^Simple mixer control \047/,"",n); sub(/\047,[0-9]+$/,"",n); print n; exit}'
+}
+[ -n "${VC_CTL:-}" ] || VC_CTL=$(pick_ctl "$VC_CARD")
+if [ -n "$VC_CTL" ]; then
+  cat > "$ROOT/etc/asound.conf" <<EOF
+pcm.!default { type plug; slave.pcm "hw:$VC_CARD" }
+ctl.!default { type hw; card "$VC_CARD" }
 EOF
+else
+  # geen hardware-volume (bv. HDMI): software-volume "VC Volume" ertussen
+  VC_CTL="VC Volume"
+  cat > "$ROOT/etc/asound.conf" <<EOF
+pcm.vcvol { type softvol; slave.pcm "plughw:$VC_CARD"; control { name "VC Volume"; card "$VC_CARD" } }
+pcm.!default { type plug; slave.pcm "vcvol" }
+ctl.!default { type hw; card "$VC_CARD" }
+EOF
+fi
+echo "  volumeregelaar: $VC_CTL"
 
 say "4) oude Raumfeld-processen opruimen (voorkomt poort-8888-conflict)"
 for n in master-process renderer stream-decoder streamcastd config-service meta-server gc4a; do pkill -9 -x "$n" 2>/dev/null; done
@@ -99,12 +131,12 @@ setsid chroot "$ROOT" /usr/bin/env -i PATH=$PATHV RAUMFELD_VIRTUALISED_HARDWARE_
 
 echo "  master-process gestart; ~25s opstarten."
 
-say "8) volume-brug starten (hardwared.Volume -> HiFiBerry Digital)"
+say "8) volume-brug starten (hardwared.Volume -> $VC_CARD/$VC_CTL)"
 pkill -f vc-volume-bridge 2>/dev/null; sleep 1
 BRIDGE=$TOOLS/vc-volume-bridge.py; [ -f "$BRIDGE" ] || BRIDGE=/tmp/vc-volume-bridge.py
-setsid python3 "$BRIDGE" "${ALSADEV#hw:}" </dev/null >/tmp/vc-volume-bridge.log 2>&1 &
-echo "  volume-brug gestart ($BRIDGE, card ${ALSADEV#hw:})"
+setsid python3 "$BRIDGE" "$VC_CARD" "$VC_CTL" </dev/null >/tmp/vc-volume-bridge.log 2>&1 &
+echo "  volume-brug gestart ($BRIDGE, $VC_CARD / $VC_CTL)"
 
 echo
 echo "Klaar. De Virtuele Connector verschijnt in de Raumfeld-app (renoembaar),"
-echo "audio -> $ALSADEV, volume via de app-knop."
+echo "audio -> $ALSADEV ($(card_kind "$VC_CARD")), volume via de app-knop ($VC_CTL)."

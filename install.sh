@@ -26,7 +26,13 @@ c(){ printf '\n\033[1;36m== %s ==\033[0m\n' "$*"; }
 ask(){ local p="$1" d="${2:-}" k="${3:-}" a=""; if [ -n "$k" ]; then eval "a=\${$k:-}"; [ -n "$a" ] && { echo "$a"; return; }; fi; if [ -r /dev/tty ]; then read -r -p "$p" a </dev/tty || true; fi; echo "${a:-$d}"; }
 fetch(){ if [ -f "$SRCDIR/$1" ]; then cp -f "$SRCDIR/$1" "$2"; else curl -fsSL "$REPO_RAW/$1" -o "$2"; fi; }
 bootcfg(){ [ -f /boot/firmware/config.txt ] && echo /boot/firmware/config.txt || echo /boot/config.txt; }
-dac_card(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/{n=$2; sub(/:.*/,"",n); if (tolower($0)!~/hdmi|vc4|bcm2835|headphone/){print n; exit}}'; }
+# audio-kaarten op NAAM (stabiel over reboots heen) + soort: extern / onboard / hdmi
+card_ids(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/{print $3}' | awk '!s[$0]++'; }
+card_desc(){ aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | sed -E 's/^card [0-9]+: [^ ]+ \[([^]]*)\].*/\1/'; }
+card_kind(){ case "$(aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | tr 'A-Z' 'a-z')" in
+  *hdmi*|*vc4*) echo hdmi;; *bcm2835*|*headphone*) echo onboard;; *) echo extern;; esac; }
+auto_card(){ local k c; for k in extern onboard hdmi; do for c in $(card_ids); do
+  [ "$(card_kind "$c")" = "$k" ] && { echo "$c"; return; }; done; done; }
 
 [ "$(id -u)" = 0 ] || { echo "Draai als root:  sudo bash install.sh"; exit 1; }
 mkdir -p "$TOOLS"
@@ -39,30 +45,38 @@ if [ "$RESUME" = 0 ]; then
   apt-get update -qq && apt-get install -y -qq alsa-utils curl xz-utils python3-dbus python3-gi coreutils util-linux >/dev/null
   echo "  ok"
 
-  c "1) Audio-device kiezen"
-  echo "Kaarten nu aanwezig:"; aplay -l 2>/dev/null | grep '^card' || echo "  (geen DAC — kies hieronder een overlay)"
+  c "1) Audio-uitgang kiezen"
   CARD=""; OVERLAY=""
-  if [ -n "${VC_CARD:-}" ]; then CARD="$VC_CARD"; echo "  (env) card $CARD"
-  elif [ -n "${VC_OVERLAY:-}" ]; then OVERLAY="$VC_OVERLAY"; echo "  (env) overlay $OVERLAY"
-  elif CARD=$(dac_card); [ -n "$CARD" ]; then
-    echo "  DAC gevonden op card $CARD."
-    keep=$(ask "Deze gebruiken? [J/n] of typ een overlay-naam: " "J")
-    case "$keep" in J|j|"") ;; N|n) CARD=""; OVERLAY=$(ask "Overlay-naam (bijv. hifiberry-dacplusadc): " "");; *) OVERLAY="$keep"; CARD="";; esac
+  if [ -n "${VC_CARD:-}" ]; then CARD="$VC_CARD"; echo "  (env) kaart $CARD"
+  elif [ -n "${VC_OVERLAY:-}" ]; then OVERLAY="$VC_OVERLAY"; CARD=auto; echo "  (env) overlay $OVERLAY"
   else
-    echo "Kies je DAC (zet de overlay aan; reboot volgt automatisch):"
-    echo "  1) HiFiBerry DAC+ ADC        (hifiberry-dacplusadc)"
-    echo "  2) HiFiBerry DAC+/DAC+ Pro   (hifiberry-dacplus)"
-    echo "  3) HiFiBerry DAC (PCM5102A)  (hifiberry-dac)"
-    echo "  4) HiFiBerry Digi/Digi+      (hifiberry-digi)"
-    echo "  5) IQaudio DAC+              (iqaudio-dacplus)"
-    echo "  6) USB-DAC / al aangesloten  (geen overlay)"
-    echo "  7) Anders (typ zelf de overlay-naam)"
-    sel=$(ask "Keuze [1]: " "1")
-    case "$sel" in
-      1) OVERLAY=hifiberry-dacplusadc;; 2) OVERLAY=hifiberry-dacplus;; 3) OVERLAY=hifiberry-dac;;
-      4) OVERLAY=hifiberry-digi;; 5) OVERLAY=iqaudio-dacplus;; 6) OVERLAY="";; 7) OVERLAY=$(ask "Overlay-naam: " "");;
-      *) OVERLAY=hifiberry-dacplusadc;;
+    i=0; dflt=""; dflt_on=""
+    echo "Aanwezige audio-uitgangen:"
+    for id in $(card_ids); do
+      i=$((i+1)); kind=$(card_kind "$id")
+      case $kind in onboard) lbl="onboard 3,5mm-jack";; hdmi) lbl="HDMI (experimenteel)";; *) lbl="externe DAC/USB";; esac
+      printf "  %d) %-16s %s  [%s]\n" "$i" "$id" "$(card_desc "$id")" "$lbl"
+      eval "opt_$i=card:$id"
+      [ -z "$dflt" ] && [ "$kind" = extern ] && dflt=$i
+      [ -z "$dflt_on" ] && [ "$kind" = onboard ] && dflt_on=$i
+    done
+    [ "$i" = 0 ] && echo "  (geen)"
+    echo "Of een DAC-HAT inschakelen (zet de overlay aan; daarna automatische reboot):"
+    for ov in "hifiberry-dacplusadc|HiFiBerry DAC+ ADC" "hifiberry-dacplus|HiFiBerry DAC+ / DAC+ Pro" \
+              "hifiberry-dac|HiFiBerry DAC (PCM5102A)" "hifiberry-digi|HiFiBerry Digi / Digi+" \
+              "iqaudio-dacplus|IQaudio DAC+" "other|Andere overlay (zelf typen)"; do
+      i=$((i+1)); printf "  %d) %s\n" "$i" "${ov#*|}"; eval "opt_$i=overlay:${ov%%|*}"
+    done
+    : "${dflt:=${dflt_on:-1}}"                 # standaard: externe DAC, anders onboard
+    sel=$(ask "Keuze [$dflt]: " "$dflt")
+    eval "choice=\${opt_$sel:-}"
+    case "$choice" in
+      card:*)        CARD=${choice#card:} ;;
+      overlay:other) OVERLAY=$(ask "Overlay-naam: " ""); CARD=auto ;;
+      overlay:*)     OVERLAY=${choice#overlay:}; CARD=auto ;;
+      *)             echo "  ongeldige keuze — automatisch kiezen"; CARD=auto ;;
     esac
+    echo "  gekozen: ${OVERLAY:+overlay $OVERLAY → }${CARD}"
   fi
 
   c "2) Overige keuzes"
@@ -75,12 +89,14 @@ if [ "$RESUME" = 0 ]; then
   { echo "DEVNAME=$(printf %q "$DEVNAME")"; echo "ROOM=$(printf %q "$ROOM")"; echo "SYSID=$(printf %q "$SYSID")"
     echo "CARD=$(printf %q "$CARD")"; echo "OVERLAY=$(printf %q "$OVERLAY")"; } > "$CONF"
 
+  BC=$(bootcfg)
+  if [ -n "$OVERLAY" ] && grep -q "^dtoverlay=$OVERLAY" "$BC"; then
+    echo "  overlay $OVERLAY staat al in $BC — geen reboot nodig."; OVERLAY=""
+  fi
   if [ -n "$OVERLAY" ]; then
     c "3) DAC-overlay aanzetten ($OVERLAY) + reboot"
-    BC=$(bootcfg)
-    grep -q "^dtoverlay=$OVERLAY" "$BC" || echo "dtoverlay=$OVERLAY" >> "$BC"
-    sed -i 's/^dtparam=audio=on/dtparam=audio=off/' "$BC" 2>/dev/null || true
-    echo "  overlay in $BC gezet; onboard audio uit."
+    echo "dtoverlay=$OVERLAY" >> "$BC"
+    echo "  overlay in $BC gezet (onboard audio blijft beschikbaar)."
     # resume-service die na de reboot de installatie afmaakt
     cat > /etc/systemd/system/$RESUME_SVC.service <<EOF
 [Unit]
@@ -103,7 +119,15 @@ fi
 # ---------- Fase 2: installeren (inline of via resume na reboot) ----------
 [ -f "$CONF" ] && . "$CONF"
 : "${DEVNAME:=Virtual Connector}"; : "${ROOM:=$DEVNAME}"; : "${SYSID:=}"; : "${CARD:=}"; : "${OVERLAY:=}"
-[ -n "$CARD" ] || CARD=$(dac_card); : "${CARD:=1}"
+# gekozen audio-uitgang vastleggen op kaartNAAM (bij overlay-keuze: de nieuwe DAC na de reboot)
+case "$CARD" in
+  ''|auto)  CARD=$(auto_card) ;;
+  *[!0-9]*) ;;
+  *)        CARD=$(aplay -l 2>/dev/null | awk -v n="$CARD" '$1=="card" && $2==n":"{print $3; exit}') ;;
+esac
+[ -n "$CARD" ] || CARD=$(auto_card)
+printf 'VC_CARD=%q\n' "$CARD" > "$TOOLS/vc.conf"
+echo "  audio-uitgang: $CARD ($(card_kind "$CARD")) -> $TOOLS/vc.conf"
 
 c "4) Pakketten + firmware (Connector 2 / HWID $HWID) van Teufel"
 apt-get install -y -qq python3-dbus python3-gi xz-utils curl alsa-utils >/dev/null 2>&1 || true
@@ -140,7 +164,7 @@ c "7) Services activeren"
 systemctl daemon-reload; systemctl enable vc-connector vc-ip-watch >/dev/null 2>&1 || true
 
 c "8) (optioneel) registreren als kamer"
-if [ -n "$SYSID" ]; then ALSADEV="hw:$CARD" bash "$TOOLS/vc-setup.sh" "$ROOM" "$SYSID" || echo "  (registratie niet bevestigd — zie /tmp/vc-master.log)"
+if [ -n "$SYSID" ]; then bash "$TOOLS/vc-setup.sh" "$ROOM" "$SYSID" || echo "  (registratie niet bevestigd — zie /tmp/vc-master.log)"
 else echo "  Geen system-id — registreer later:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\" <system-id>"; fi
 
 c "9) persistente stack starten (via systemd — overleeft de installer/resume)"
@@ -153,5 +177,6 @@ systemctl disable $RESUME_SVC >/dev/null 2>&1 || true; rm -f /etc/systemd/system
 
 c "KLAAR"
 IP=$(ip -4 -o addr show "$(ip route|awk '/^default/{print $5;exit}')" 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
-echo "Virtuele Connector '$DEVNAME' draait (IP ${IP:-?}), audio -> card $CARD, start automatisch na reboot."
+echo "Virtuele Connector '$DEVNAME' draait (IP ${IP:-?}), audio -> $CARD ($(card_kind "$CARD")), start automatisch na reboot."
+echo "Andere audio-uitgang later? Pas VC_CARD aan in $TOOLS/vc.conf en: sudo systemctl restart vc-connector"
 echo "TIP: geef de Pi een vast IP (DHCP-reservering) om her-ontdek-hikjes te voorkomen."

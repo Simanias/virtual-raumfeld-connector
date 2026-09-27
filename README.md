@@ -7,9 +7,10 @@ its **own DAC** — shows up as a full Raumfeld renderer/room in the Raumfeld ap
 ```bash
 wget -qO- https://raw.githubusercontent.com/Simanias/virtual-raumfeld-connector/main/install.sh | sudo bash
 ```
-The installer asks for: **audio device** (autodetect or pick your DAC), **device name** (e.g. `Virtual
+The installer asks for: **audio output** (an external/USB DAC, the onboard 3.5 mm jack, HDMI, or enable a
+DAC HAT overlay — then it reboots once and continues by itself), **device name** (e.g. `Virtual
 Connector`), **room name**, and your **Raumfeld system-id**. After that everything runs and **starts
-automatically on reboot**.
+automatically on reboot**. The choice is stored by card *name*, so it survives card renumbering.
 
 > **system-id** is the UUID of your Raumfeld system. It is generated once on your host and only lives
 > on the Raumfeld devices themselves (`/var/raumfeld-1.0/system-id`); it is not shown in the app. See
@@ -46,13 +47,14 @@ public-key protected). Ways to obtain it:
 
 ## Managing it
 - Start/stop: `sudo systemctl start|stop vc-connector`
-- Volume: via the app (the bridge adjusts the DAC mixer; curve tunable via `VC_SPANDB`)
+- Volume: via the app. The bridge picks the card's own volume control (e.g. `Digital` on a HiFiBerry,
+  `PCM` on the onboard jack) or adds a software volume when there is none (HDMI); curve tunable via `VC_SPANDB`.
 - Logs: `/tmp/vc-master.log`, `/tmp/connman-stub.log`, `/tmp/vc-volume-bridge.log`
-- Force a specific audio card: `ALSADEV=hw:N sudo bash /opt/virtualtools/vc-up.sh`
+- Change the audio output: set `VC_CARD` in `/opt/virtualtools/vc.conf` to a card name from `aplay -l`
+  (e.g. `sndrpihifiberry`, `Headphones`) and run `sudo systemctl restart vc-connector`.
 
 ## Roadmap
 - Auto-discover / auto-join the system-id (drop the manual system-id step).
-- Optional per-DAC volume-control autodetection.
 
 ## ⚠️ Notes
 - **Do not run a firmware update** from the Raumfeld app on this device — there is no real flash; it can

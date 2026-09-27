@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
-# Volume-brug: volgt com.raumfeld.hardwared 'Volume'/'Mute' (wat de app zet) en stelt
-# de HiFiBerry ALSA-mixer ('Digital', card 1) bij. Nodig omdat de renderer het volume aan
-# hardwared delegeert (op echte hardware = STA350), die wij virtueel draaien.
+# Volume-brug: volgt com.raumfeld.hardwared 'Volume'/'Mute' (wat de app zet) en stelt de
+# ALSA-mixer van de gekozen audio-uitgang bij. Nodig omdat de renderer het volume aan hardwared
+# delegeert (op echte hardware = STA350), die wij virtueel draaien.
 #
-#   sudo python3 vc-volume-bridge.py            # draait als achtergrond-loop
+#   vc-volume-bridge.py <kaartnaam> <mixer-regelaar>
+#   bv. vc-volume-bridge.py sndrpihifiberry Digital   |   Headphones PCM   |   vc4hdmi "VC Volume"
 import os, sys, time, subprocess, dbus, dbus.bus
 
-# Kaart + mixer-control via argv/env, zodat dit op elke Pi/DAC werkt.
-#   vc-volume-bridge.py [card] [control]
 SOCK = os.environ.get("VC_SOCK", "unix:path=/opt/rfconnector/run/dbus/system_bus_socket")
-CARD = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VC_CARD", "1")
+CARD = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VC_CARD", "0")
 CTL  = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("VC_CTL", "Digital")
 IFACE = "com.raumfeld.hardwared"
-
-RAWMAX = int(os.environ.get("VC_RAWMAX", "207"))   # PCM512x 'Digital' max (0 dB)
-SPANDB = int(os.environ.get("VC_SPANDB", "50"))     # app 0-100 -> -SPANDB..0 dB (dB-lineair = 0.5 dB/stap)
+SPANDB = float(os.environ.get("VC_SPANDB", "50"))   # app 1..100 -> -SPANDB..0 dB (dB-lineair)
 
 def amixer(*a):
-    subprocess.run(["amixer", "-c", CARD, "-q", *a], check=False)
+    return subprocess.run(["amixer", "-c", CARD, "-q", "sset", CTL, *a],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
-def vol_to_raw(vol):
-    # vol 100 -> RAWMAX (0 dB); vol 1 -> RAWMAX - SPANDB*2 (-SPANDB dB). Bruikbare curve i.p.v.
-    # lineair over de volle -103 dB..0 dB (waar 50% al -52 dB is).
-    floor = RAWMAX - SPANDB * 2
-    raw = floor + round((RAWMAX - floor) * vol / 100.0)
-    return max(0, min(RAWMAX, int(raw)))
+def set_volume(vol):
+    db = (vol / 100.0 - 1.0) * SPANDB                 # 100 -> 0 dB, 50 -> -25 dB, 1 -> ~-50 dB
+    ok = amixer("--", "%.1fdB" % db) or amixer("%d%%" % vol)   # dB waar mogelijk, anders procent
+    amixer("unmute")                                   # faalt stil bij regelaars zonder schakelaar
+    return ok
+
+def set_mute():
+    ok = amixer("0%")
+    amixer("mute")
+    return ok
 
 def connect():
     bus = dbus.bus.BusConnection(SOCK)
@@ -33,7 +35,7 @@ def connect():
 
 def main():
     props, last = None, None
-    print("vc-volume-bridge: hardwared.Volume -> HiFiBerry Digital", flush=True)
+    print("vc-volume-bridge: hardwared.Volume -> %s / %s" % (CARD, CTL), flush=True)
     while True:
         try:
             if props is None:
@@ -43,16 +45,11 @@ def main():
                 mute = int(props.Get(IFACE, "Mute"))
             except Exception:
                 mute = 0
-            if mute or vol <= 0:
-                key = "mute"
-                if key != last:
-                    amixer("set", CTL, "mute")
-                    last = key
-            else:
-                raw = vol_to_raw(max(0, min(100, vol)))
-                if raw != last:
-                    amixer("set", CTL, str(raw), "unmute")
-                    last = raw
+            target = "mute" if (mute or vol <= 0) else max(1, min(100, vol))
+            if target != last:
+                ok = set_mute() if target == "mute" else set_volume(target)
+                if ok:                                  # anders volgende ronde opnieuw proberen
+                    last = target                       # (softvol bestaat pas als er audio speelt)
         except Exception:
             props, last = None, None
             time.sleep(1)
