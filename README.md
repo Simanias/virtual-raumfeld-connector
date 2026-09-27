@@ -1,45 +1,62 @@
 # Virtual Raumfeld Connector
 
-Draai de Raumfeld **Connector**-firmware (userspace) in een chroot op een Raspberry Pi, zodat de Pi
-met z'n **eigen DAC** als volwaardige Raumfeld-renderer/kamer in de Raumfeld-app, multiroom,
-Home Assistant en Music Assistant verschijnt — zonder de kleine-driver/DSP-beperkingen van een One S,
-en **zonder de netwerk-interface van de Pi aan te raken**.
+Run the Raumfeld **Connector** firmware (userspace) in a chroot on a Raspberry Pi, so the Pi — with
+its **own DAC** — shows up as a full Raumfeld renderer/room in the Raumfeld app, multiroom, Home
+Assistant and Music Assistant. No small-driver/DSP limits of a One S, and it **never touches the Pi's
+network interface**.
 
-## Installatie (Raspberry Pi OS 32-bit Lite)
+## Install (Raspberry Pi OS 32-bit Lite)
 ```bash
 wget -qO- https://raw.githubusercontent.com/Simanias/virtual-raumfeld-connector/main/install.sh | sudo bash
 ```
-De installer vraagt om: **audio-device** (autodetect of kies je DAC), **device-naam** (bv. `Virtual Connector`),
-**kamernaam**, en je **Raumfeld system-id**. Daarna draait alles en **start het automatisch na een reboot**.
+The installer asks for: **audio device** (autodetect or pick your DAC), **device name** (e.g. `Virtual
+Connector`), **room name**, and your **Raumfeld system-id**. After that everything runs and **starts
+automatically on reboot**.
 
-> **system-id** vind je op een bestaand Raumfeld-toestel in `/var/raumfeld-1.0/system-id` (nodig om het
-> toestel in *jouw* systeem te laten verschijnen).
+> **system-id** is the UUID of your Raumfeld system. It is generated once on your host and only lives
+> on the Raumfeld devices themselves (`/var/raumfeld-1.0/system-id`); it is not shown in the app. See
+> [Getting your system-id](#getting-your-system-id).
 
 ## Firmware & copyright
-Deze repo bevat **alleen eigen tooling** — géén Teufel-firmware. De installer haalt de Connector-firmware
-bij de installatie **rechtstreeks van Teufel's officiele update-server** (`updates.raumfeld.com`, hardware-id 9)
-en pakt daar lokaal de rootfs uit. Zo verspreiden we geen beschermde firmware; elke gebruiker haalt 'm zelf op.
+This repo contains **only our own tooling** — no Teufel firmware. On install, the Connector firmware is
+fetched **directly from Teufel's official update server** (`updates.raumfeld.com`, hardware id 9) and
+the rootfs is extracted locally. We don't redistribute protected firmware; every user obtains it themselves.
 
-## Hoe het werkt
-- Universele AM33xx-rootfs (armhf) in een chroot op `/opt/rfconnector`.
-- `hardwared`/`master-process` draaien **virtueel** (`RAUMFELD_VIRTUALISED_HARDWARE_ID=9`, geen MCU/STA350).
-- **ConnMan dbus-stub** levert een "online" netwerk op de chroot-bus; de echte `connmand` is onschadelijk gemaakt → wlan0 blijft ongemoeid.
-- De **renderer** draait via een wrapper *niet*-virtueel → opent een echt ALSA-device (je DAC) i.p.v. de netwerk-stream-server.
-- **Volume-brug** vertaalt de app-volume (`hardwared.Volume`) naar de ALSA-mixer van je DAC.
-- Registratie als kamer via het AP-loze pad (`PreconfiguredSetupController` + gesimuleerde setup-knop + `SimulatedCalloutServer`).
-- **IP-watcher** herstart de stack als het IP verandert (zelfherstellend); een **vast IP** (DHCP-reservering) wordt aangeraden.
+## How it works
+- Universal AM33xx rootfs (armhf) in a chroot at `/opt/rfconnector`.
+- `hardwared`/`master-process` run **virtualised** (`RAUMFELD_VIRTUALISED_HARDWARE_ID=9`, no MCU/STA350).
+- A **ConnMan D-Bus stub** provides an "online" network on the chroot bus; the real `connmand` is
+  neutralised → wlan0 is left untouched.
+- The **renderer** runs *non*-virtualised via a wrapper → it opens a real ALSA device (your DAC) instead
+  of the network stream server.
+- A **volume bridge** maps the app volume (`hardwared.Volume`) to your DAC's ALSA mixer.
+- Registration as a room uses the AP-less path (`PreconfiguredSetupController` + a simulated setup-button
+  + the built-in `SimulatedCalloutServer`).
+- An **IP watcher** restarts the stack if the IP changes (self-healing); a **static IP** (DHCP reservation)
+  is recommended.
 
-## Onderdelen
+## Getting your system-id
+There is no clean way to read it over the network (the app doesn't show it and the config service is
+public-key protected). Ways to obtain it:
+- If you already run a Virtual Connector (or any device you can SSH into): `cat /var/raumfeld-1.0/system-id`.
+- Ask in the project issues / use the value you were given if you set one up before.
+- (Planned) auto-join so the installer no longer needs it — see Roadmap.
+
+## Components
 `install.sh` · `vc-up.sh` / `vc-down.sh` · `vc-master.sh` · `connman-stub.py` · `vc-volume-bridge.py` ·
 `vc-ip-watch.sh` · `vc-setup.sh` · `vc-connector.service` · `vc-ip-watch.service` · `extract-connector-rootfs.sh`
 
-## Beheer
+## Managing it
 - Start/stop: `sudo systemctl start|stop vc-connector`
-- Volume: via de app-knop (brug stelt de DAC-mixer bij; curve instelbaar via `VC_SPANDB`)
+- Volume: via the app (the bridge adjusts the DAC mixer; curve tunable via `VC_SPANDB`)
 - Logs: `/tmp/vc-master.log`, `/tmp/connman-stub.log`, `/tmp/vc-volume-bridge.log`
-- Kies je audio-device forceren: `ALSADEV=hw:N sudo bash /opt/virtualtools/vc-up.sh`
+- Force a specific audio card: `ALSADEV=hw:N sudo bash /opt/virtualtools/vc-up.sh`
 
-## ⚠️ Let op
-- **Doe geen firmware-update** vanuit de Raumfeld-app op dit toestel — er is geen echte flash; dat kan de
-  virtuele opstelling breken. De installer blokkeert de update-check daarom in de chroot.
-- Reverse-engineering/interoperabiliteit voor eigen gebruik; geen affiliatie met Teufel/Raumfeld.
+## Roadmap
+- Auto-discover / auto-join the system-id (drop the manual system-id step).
+- Optional per-DAC volume-control autodetection.
+
+## ⚠️ Notes
+- **Do not run a firmware update** from the Raumfeld app on this device — there is no real flash; it can
+  break the virtual setup. The installer blocks the update check inside the chroot.
+- Reverse-engineering / interoperability for personal use; not affiliated with Teufel/Raumfeld.
