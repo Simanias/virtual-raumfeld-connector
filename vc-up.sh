@@ -136,7 +136,7 @@ setsid chroot "$ROOT" /usr/bin/env -i PATH=$PATHV RAUMFELD_VIRTUALISED_HARDWARE_
 echo "  master-process gestart; ~25s opstarten."
 
 say "8) volume-brug starten (hardwared.Volume -> $VC_CARD/$VC_CTL)"
-pkill -f vc-volume-bridge 2>/dev/null; sleep 1
+pkill -f "vc-volume-bridge.py" 2>/dev/null; sleep 1
 BRIDGE=$TOOLS/vc-volume-bridge.py; [ -f "$BRIDGE" ] || BRIDGE=/tmp/vc-volume-bridge.py
 setsid python3 "$BRIDGE" "$VC_CARD" "$VC_CTL" </dev/null >/tmp/vc-volume-bridge.log 2>&1 &
 echo "  volume-brug gestart ($BRIDGE, $VC_CARD / $VC_CTL)"
