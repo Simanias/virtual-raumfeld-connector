@@ -10,7 +10,7 @@ chroot_kill(){ local pids; pids=$(chroot_pids); [ -n "$pids" ] && kill -"${1:-TE
 pkill -f "connman-stub.py"     2>/dev/null   # stub (draait op de host)
 pkill -f "vc-volume-bridge.py" 2>/dev/null   # volume-brug (draait op de host)
 chroot_kill TERM; sleep 2; chroot_kill KILL
-rm -f "$ROOT/run/dbus/system_bus_socket" "$ROOT/run/dbus/pid" "$ROOT/run/dbus/messagebus.pid" 2>/dev/null
+rm -f "$ROOT/run/dbus/system_bus_socket" "$ROOT/run/messagebus.pid" "$ROOT/var/run/messagebus.pid" "$ROOT/run/avahi-daemon/pid" 2>/dev/null
 
 # chroot-mounts los (eigen devtmpfs/proc/sys/tmpfs — geen binds van de host)
 for m in run dev/pts dev sys proc; do umount -l "$ROOT/$m" 2>/dev/null; done
