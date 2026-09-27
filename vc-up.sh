@@ -29,6 +29,9 @@ STUB=$TOOLS/connman-stub.py; [ -f "$STUB" ] || STUB=/tmp/connman-stub.py
 MLOG=/tmp/vc-master.log
 PATHV=/usr/sbin:/usr/bin:/sbin:/bin
 say(){ echo "== $* =="; }
+# processen waarvan de root de chroot is — veilig te killen zonder ooit een host-proces te raken
+chroot_pids(){ local p; for p in /proc/[0-9]*; do [ "$(readlink "$p/root" 2>/dev/null)" = "$ROOT" ] && echo "${p#/proc/}"; done; }
+chroot_kill(){ local pids; pids=$(chroot_pids); [ -n "$pids" ] && kill -"${1:-TERM}" $pids 2>/dev/null; return 0; }
 
 [ "$(id -u)" = 0 ] || { echo "Draai als root (sudo)."; exit 1; }
 
@@ -89,16 +92,14 @@ EOF
 fi
 echo "  volumeregelaar: $VC_CTL"
 
-say "4) oude Raumfeld-processen opruimen (voorkomt poort-8888-conflict)"
-for n in master-process renderer stream-decoder streamcastd config-service meta-server gc4a; do pkill -9 -x "$n" 2>/dev/null; done
-sleep 1
+say "4) oude chroot-processen opruimen (alleen processen IN de chroot — de host blijft onaangeroerd)"
+# LET OP: nooit de init.d-stopscripts van de firmware gebruiken: die doen o.a. 'killall dbus-daemon',
+# en via /proc ziet killall in de chroot ook de dbus van de Pi zelf -> NetworkManager/WiFi valt weg.
+pkill -f "connman-stub.py" 2>/dev/null; pkill -f "vc-volume-bridge.py" 2>/dev/null
+chroot_kill TERM; sleep 2; chroot_kill KILL
+rm -f "$ROOT/run/dbus/system_bus_socket" "$ROOT/run/dbus/pid" "$ROOT/run/dbus/messagebus.pid" 2>/dev/null || true
 
 say "5) system-dbus + avahi + hardwared (virtueel, HWID=$HWID)"
-# schoon starten: stale chroot-dbus/hardwared + socket weg (voorkomt stub 'Connection refused' na herstart)
-pkill -9 -x hardwared 2>/dev/null; pkill -f start-hardwared 2>/dev/null; pkill -f "connman-stub.py" 2>/dev/null
-chroot "$ROOT" /bin/sh -c '/etc/init.d/S30dbus stop; /etc/init.d/S50avahi-daemon stop' >/dev/null 2>&1 || true
-rm -f "$ROOT/run/dbus/system_bus_socket" "$ROOT/run/dbus/pid" 2>/dev/null || true
-sleep 1
 chroot "$ROOT" /usr/bin/env -i PATH=$PATHV RAUMFELD_VIRTUALISED_HARDWARE_ID=$HWID \
   G_FILENAME_ENCODING=UTF-8,ISO-8859-1 RAUMFELD_LOG_TARGET=buffers /bin/sh -lc '
     /etc/init.d/S30dbus start          >/dev/null 2>&1
