@@ -13,6 +13,14 @@ The installer asks only two things:
   `VC_KEEP_ONBOARD=1` to keep it. The choice is stored by card *name*, so it survives card renumbering.
 - **room name** (default `Virtual Connector`) — renameable later in the app.
 
+Before anything is changed, the installer looks for your **Raumfeld host** on the network (SSDP) and shows
+it, e.g. `Raumfeld host found: Raumfeld Soundbar (192.168.1.41)`. If none is found it asks for the host's
+IP address to diagnose the problem: a host that is reachable but not discoverable means broadcast/multicast
+is blocked between the Pi and your Raumfeld devices (different subnet/VLAN, guest WiFi / client isolation,
+IGMP snooping or "multicast enhancement" on the router/access point). Raumfeld itself only finds the host
+via broadcast/multicast, so that has to be fixed — entering an IP cannot replace it. Press Enter to install
+without registering and register later with `vc-setup.sh` (see below).
+
 It then registers the Pi as a room in the Raumfeld system on your network. **No system-id is needed**:
 the Pi adopts the system-id from your Raumfeld host automatically during registration. After that
 everything runs and **starts automatically on reboot**.
@@ -20,8 +28,8 @@ everything runs and **starts automatically on reboot**.
 In the app the device shows up with model **Virtual Connector**; its player follows the standard Raumfeld
 naming, `Connector <room name>` (like `Speaker Bar` or `Connector Kitchen`).
 
-Headless/non-interactive: `VC_CARD=<card name>` or `VC_OVERLAY=<overlay>`, `VC_ROOM="<name>"`
-(`VC_DEBUG=1` for a trace).
+Headless/non-interactive: `VC_CARD=<card name>` or `VC_OVERLAY=<overlay>`, `VC_ROOM="<name>"`,
+`VC_HOST=<ip>|none` (only used when auto-discovery fails; `VC_DEBUG=1` for a trace).
 
 ## Firmware & copyright
 This repo contains **only our own tooling** — no Teufel firmware. On install, the Connector firmware is

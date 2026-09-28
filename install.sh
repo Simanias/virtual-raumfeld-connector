@@ -33,6 +33,24 @@ card_kind(){ case "$(aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | tr 'A
   *hdmi*|*vc4*) echo hdmi;; *bcm2835*|*headphone*) echo onboard;; *) echo external;; esac; }
 auto_card(){ local k c; for k in external onboard hdmi; do for c in $(card_ids); do
   [ "$(card_kind "$c")" = "$k" ] && { echo "$c"; return; }; done; done; }
+# Raumfeld host(s) on this network: SSDP search for the host's ConfigDevice (multicast)
+find_hosts(){ python3 - <<'PY' 2>/dev/null
+import socket, time
+msg = "\r\n".join(["M-SEARCH * HTTP/1.1", "HOST: 239.255.255.250:1900", 'MAN: "ssdp:discover"', "MX: 2",
+                   "ST: urn:schemas-raumfeld-com:device:ConfigDevice:1", "", ""]).encode()
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2); s.settimeout(0.5)
+seen = set(); end = time.time() + 5
+for _ in range(2):
+    s.sendto(msg, ("239.255.255.250", 1900)); time.sleep(0.2)
+while time.time() < end:
+    try: data, addr = s.recvfrom(65535)
+    except socket.timeout: continue
+    if b"ConfigDevice" in data: seen.add(addr[0])
+print(" ".join(sorted(seen)))
+PY
+}
+host_name(){ curl -sL --max-time 4 "http://$1:47365/getHostInfo" 2>/dev/null | sed -n 's:.*<hostName>\(.*\)</hostName>.*:\1:p'; }
 
 [ "$(id -u)" = 0 ] || { echo "Run as root:  sudo bash install.sh"; exit 1; }
 mkdir -p "$TOOLS"
@@ -85,9 +103,37 @@ if [ "$RESUME" = 0 ]; then
   DEVNAME="$ROOM"
   SYSID="${VC_SYSID:-}"      # normally empty: the device adopts the system-id from your host automatically
 
+  c "2b) Find your Raumfeld host"
+  REGISTER=1; HOSTIP=""
+  found=$(find_hosts)
+  if [ -n "$found" ]; then
+    for ip in $found; do echo "  Raumfeld host found: $(host_name "$ip") ($ip)"; done
+    HOSTIP=${found%% *}
+  else
+    echo "  No Raumfeld host found automatically on this network."
+    HOSTIP=$(ask "IP address of your Raumfeld host (Enter = install without registering): " "" VC_HOST)
+    if [ -z "$HOSTIP" ] || [ "$HOSTIP" = none ]; then
+      REGISTER=0; HOSTIP=""
+      echo "  continuing without registration — register later with:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\""
+    elif hn=$(host_name "$HOSTIP"); [ -n "$hn" ]; then
+      echo "  $HOSTIP is a Raumfeld host ($hn) and reachable, but automatic discovery does NOT work."
+      echo "  Raumfeld needs broadcast/multicast between the Pi and your Raumfeld devices. Check that they are on"
+      echo "  the same network/subnet (same WiFi/VLAN, no guest network or client isolation) and that multicast"
+      echo "  is not filtered (e.g. IGMP snooping / multicast enhancement settings on your router or access point)."
+      ans=$(ask "Continue anyway and try to register? [y/N]: " "n")
+      case "$ans" in y|Y|yes|YES) ;; *) REGISTER=0; echo "  continuing without registration.";; esac
+    else
+      echo "  !! No Raumfeld host answers at $HOSTIP (wrong IP, or the host is switched off)."
+      ans=$(ask "Continue without registering? [Y/n]: " "y")
+      case "$ans" in n|N|no|NO) echo "Aborted."; exit 1;; esac
+      REGISTER=0
+    fi
+  fi
+
   # keep the choices for the resume after the reboot
   { echo "DEVNAME=$(printf %q "$DEVNAME")"; echo "ROOM=$(printf %q "$ROOM")"; echo "SYSID=$(printf %q "$SYSID")"
-    echo "CARD=$(printf %q "$CARD")"; echo "OVERLAY=$(printf %q "$OVERLAY")"; } > "$CONF"
+    echo "CARD=$(printf %q "$CARD")"; echo "OVERLAY=$(printf %q "$OVERLAY")"
+    echo "REGISTER=$(printf %q "$REGISTER")"; echo "HOSTIP=$(printf %q "$HOSTIP")"; } > "$CONF"
 
   BC=$(bootcfg)
   # with a DAC (HAT overlay or external/USB card) switch off the onboard jack, unless VC_KEEP_ONBOARD=1
@@ -126,6 +172,7 @@ fi
 # ---------- Phase 2: install (inline, or via the resume after the reboot) ----------
 [ -f "$CONF" ] && . "$CONF"
 : "${DEVNAME:=Virtual Connector}"; : "${ROOM:=$DEVNAME}"; : "${SYSID:=}"; : "${CARD:=}"; : "${OVERLAY:=}"
+: "${REGISTER:=1}"; : "${HOSTIP:=}"
 # store the chosen audio output by card NAME (after an overlay choice: the new DAC after the reboot)
 case "$CARD" in
   ''|auto)  CARD=$(auto_card) ;;
@@ -174,7 +221,10 @@ systemctl daemon-reload; systemctl enable vc-connector vc-ip-watch >/dev/null 2>
 c "8) Register as a room (the system-id is adopted automatically from your Raumfeld host)"
 if [ -f "$ROOT/var/raumfeld-1.0/device-role.json" ]; then
   echo "  already registered — skipping"
+elif [ "$REGISTER" != 1 ]; then
+  echo "  skipped (no Raumfeld host) — register later with:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\""
 else
+  [ -n "$HOSTIP" ] && echo "  host: $(host_name "$HOSTIP") ($HOSTIP)"
   bash "$TOOLS/vc-setup.sh" "$ROOM" "$SYSID" \
     || echo "  (registration not confirmed — retry later:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\")"
 fi
