@@ -66,7 +66,7 @@ can't be hidden individually; the ones that need Connector hardware simply do no
 |---|---|
 | Volume / mute | ✅ Works — the card's volume control (or a software volume) |
 | EQ (bass / mid / treble) | ✅ Works — in the renderer's DSP chain, ±6 dB |
-| LED | ✅ Works — the Pi's own ACT (green) / PWR (red) LEDs. LEDs on a DAC HAT are usually wired to the power supply and can't be switched |
+| LED | ✅ Works — the Pi's own ACT (green) / PWR (red) LEDs, also off in standby (eco mode). LEDs on a DAC HAT are usually wired to the power supply and can't be switched |
 | Eco mode / standby timer | ✅ Works — the device goes into standby and wakes up when you play something. It saves no power on the Pi: the DAC stays on |
 | Fixed clock | ⚪ Accepted by the firmware (it briefly reopens the sound card), but it is meant for the Connector's optical output — no audible effect on a DAC |
 | Maximum sample rate | ⚪ No effect — the source rate is played unchanged (e.g. 44.1 or 192 kHz). A DAC that can't handle a rate still works: ALSA converts it automatically |

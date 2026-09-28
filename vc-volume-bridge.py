@@ -2,8 +2,8 @@
 # Hardware bridge: follows what the app sets on com.raumfeld.hardwared and applies it to the Pi.
 # Needed because hardwared runs virtualised (on a real device it drives the amplifier and the LED).
 #   Volume / Mute  -> ALSA mixer of the chosen audio output
-#   LedBrightness  -> the Pi's own LEDs (ACT/PWR): off when the LED is switched off in the app
-#                     (VC_LEDS=0 leaves the Pi's LEDs alone)
+#   LedBrightness  -> the Pi's own LEDs (ACT/PWR): off when the LED is switched off in the app or the
+#   PowerState        device is in standby (eco mode); VC_LEDS=0 leaves the Pi's LEDs alone
 #
 #   vc-volume-bridge.py <card name> <mixer control>
 #   e.g. vc-volume-bridge.py sndrpihifiberry Digital   |   Headphones PCM   |   vc4hdmi "VC Volume"
@@ -78,7 +78,7 @@ def main():
                     ok = set_mute() if target == "mute" else set_volume(target)
                     if ok:                              # otherwise retry next round
                         last = target                   # (softvol only exists once audio plays)
-                led = int(p.get("LedBrightness", 100)) > 0
+                led = int(p.get("LedBrightness", 100)) > 0 and int(p.get("PowerState", 2)) == 2   # 2 = active
                 if led != last_led:
                     leds.set(led)
                     last_led = led
