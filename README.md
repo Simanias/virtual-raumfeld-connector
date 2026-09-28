@@ -47,17 +47,35 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
   switch to the Pi's own ACT/PWR LEDs (`VC_LEDS=0` in `vc.conf` leaves them alone). LEDs on a DAC HAT
   are usually wired to the power supply and can't be switched.
 - **Connector 2 mode** (automatic when your card has an input, e.g. a HiFiBerry DAC+ ADC): the renderer
-  identifies as a real Connector 2, so the app's **EQ** (bass/mid/treble) works — it runs in the renderer's
-  own DSP chain. This uses private, patched copies of two firmware libraries for the renderer only
-  (`vc-renderer-libs.py`). The app then also shows the other Connector 2 settings (line-in, fixed clock,
-  power button, …); these have no function on the Pi. Without an input, or with `VC_MODE=basic` in
-  `vc.conf`, the renderer runs in basic mode (no EQ/LED).
+  identifies as a real Connector 2, so the app's **EQ** and **LED** settings reach the Pi (see
+  [Settings in the app](#settings-in-the-app)). This uses private, patched copies of two firmware
+  libraries for the renderer only (`vc-renderer-libs.py`). Without an input, or with `VC_MODE=basic` in
+  `vc.conf`, the renderer runs in basic mode.
 - Registration as a room uses the AP-less path (`PreconfiguredSetupController` + a simulated setup-button
   + the built-in `SimulatedCalloutServer`); the system-id is then taken over from your host.
 - Chroot processes are only ever stopped by their `/proc/<pid>/root`: the firmware's own init scripts use
   `killall`, which would also hit the Pi's own dbus and take WiFi down.
 - An **IP watcher** restarts the stack if the IP changes (self-healing); a **static IP** (DHCP reservation)
   is recommended.
+
+## Settings in the app
+In Connector 2 mode the app shows all settings of a real Connector 2. They are shown by device type and
+can't be hidden individually; the ones that need Connector hardware simply do nothing on the Pi.
+
+| Setting | On the Pi |
+|---|---|
+| Volume / mute | ✅ Works — the card's volume control (or a software volume) |
+| EQ (bass / mid / treble) | ✅ Works — in the renderer's DSP chain, ±6 dB |
+| LED | ✅ Works — the Pi's own ACT (green) / PWR (red) LEDs. LEDs on a DAC HAT are usually wired to the power supply and can't be switched |
+| Fixed clock | ⚪ Accepted by the firmware (it briefly reopens the sound card), but it is meant for the Connector's optical output — no audible effect on a DAC |
+| Maximum sample rate | ⚪ No effect — the source rate is played unchanged (e.g. 44.1 or 192 kHz). A DAC that can't handle a rate still works: ALSA converts it automatically |
+| Line-in / line-in boost | ⚪ No effect — line-in is not supported |
+| Power button behaviour | ⚪ No effect — the Pi has no power button |
+
+In basic mode only volume/mute works; the EQ and LED settings don't reach the Pi.
+
+To see what is playing: `cat /proc/asound/card0/pcm0p/sub0/hw_params` shows the rate sent to the DAC
+(the format is always 32-bit, the renderer's output format).
 
 ## Components
 `install.sh` · `vc-up.sh` / `vc-down.sh` · `vc-master.sh` · `connman-stub.py` · `vc-volume-bridge.py` · `vc-renderer-libs.py` ·
