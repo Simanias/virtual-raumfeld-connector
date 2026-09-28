@@ -44,8 +44,8 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
 - The **renderer** runs *non*-virtualised via a wrapper → it opens a real ALSA device (your DAC) instead
   of the network stream server.
 - A **bridge** maps the app volume (`hardwared.Volume`) to your DAC's ALSA mixer, and the app's LED
-  switch to the Pi's own ACT/PWR LEDs (`VC_LEDS=0` in `vc.conf` leaves them alone). LEDs on a DAC HAT
-  are usually wired to the power supply and can't be switched.
+  switch to the Pi's own ACT/PWR LEDs (`VC_LEDS=0` in `vc.conf` leaves them alone). A LED on a DAC HAT
+  has no switch of its own (see the table below).
 - **Connector 2 mode** (automatic when your card has an input, e.g. a HiFiBerry DAC+ ADC): the renderer
   identifies as a real Connector 2, so the app's **EQ** and **LED** settings reach the Pi (see
   [Settings in the app](#settings-in-the-app)). This uses private, patched copies of two firmware
@@ -66,7 +66,7 @@ can't be hidden individually; the ones that need Connector hardware simply do no
 |---|---|
 | Volume / mute | ✅ Works — the card's volume control (or a software volume) |
 | EQ (bass / mid / treble) | ✅ Works — in the renderer's DSP chain, ±6 dB |
-| LED | ✅ Works — the Pi's own ACT (green) / PWR (red) LEDs, also off in standby (eco mode). LEDs on a DAC HAT are usually wired to the power supply and can't be switched |
+| LED | ✅ Works — the Pi's own ACT (green) / PWR (red) LEDs, also off in standby (eco mode). A LED on a DAC HAT has no switch of its own: on a HiFiBerry DAC+ ADC it stays on while the DAC is in use and goes off in standby |
 | Eco mode / standby timer | ✅ Works — the device goes into standby and wakes up when you play something. It saves no power on the Pi: the DAC stays on |
 | Fixed clock | ⚪ Accepted by the firmware (it briefly reopens the sound card), but it is meant for the Connector's optical output — no audible effect on a DAC |
 | Maximum sample rate | ⚪ No effect — the source rate is played unchanged (e.g. 44.1 or 192 kHz). A DAC that can't handle a rate still works: ALSA converts it automatically |
