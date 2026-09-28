@@ -7,8 +7,8 @@ ROOT=${ROOT:-/opt/rfconnector}
 chroot_pids(){ local p; for p in /proc/[0-9]*; do [ "$(readlink "$p/root" 2>/dev/null)" = "$ROOT" ] && echo "${p#/proc/}"; done; }
 chroot_kill(){ local pids; pids=$(chroot_pids); [ -n "$pids" ] && kill -"${1:-TERM}" $pids 2>/dev/null; return 0; }
 
-pkill -f "connman-stub.py"     2>/dev/null   # stub (runs on the host)
-pkill -f "vc-volume-bridge.py" 2>/dev/null   # volume bridge (runs on the host)
+pkill -f "^python3 [^ ]*connman-stub.py"     2>/dev/null   # stub (runs on the host)
+pkill -f "^python3 [^ ]*vc-volume-bridge.py" 2>/dev/null   # volume bridge (runs on the host)
 chroot_kill TERM; sleep 2; chroot_kill KILL
 rm -f "$ROOT/run/dbus/system_bus_socket" "$ROOT/run/messagebus.pid" "$ROOT/var/run/messagebus.pid" "$ROOT/run/avahi-daemon/pid" 2>/dev/null
 

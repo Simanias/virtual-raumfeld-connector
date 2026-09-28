@@ -43,7 +43,15 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
   neutralised → wlan0 is left untouched.
 - The **renderer** runs *non*-virtualised via a wrapper → it opens a real ALSA device (your DAC) instead
   of the network stream server.
-- A **volume bridge** maps the app volume (`hardwared.Volume`) to your DAC's ALSA mixer.
+- A **bridge** maps the app volume (`hardwared.Volume`) to your DAC's ALSA mixer, and the app's LED
+  switch to the Pi's own ACT/PWR LEDs (`VC_LEDS=0` in `vc.conf` leaves them alone). LEDs on a DAC HAT
+  are usually wired to the power supply and can't be switched.
+- **Connector 2 mode** (automatic when your card has an input, e.g. a HiFiBerry DAC+ ADC): the renderer
+  identifies as a real Connector 2, so the app's **EQ** (bass/mid/treble) works — it runs in the renderer's
+  own DSP chain. This uses private, patched copies of two firmware libraries for the renderer only
+  (`vc-renderer-libs.py`). The app then also shows the other Connector 2 settings (line-in, fixed clock,
+  power button, …); these have no function on the Pi. Without an input, or with `VC_MODE=basic` in
+  `vc.conf`, the renderer runs in basic mode (no EQ/LED).
 - Registration as a room uses the AP-less path (`PreconfiguredSetupController` + a simulated setup-button
   + the built-in `SimulatedCalloutServer`); the system-id is then taken over from your host.
 - Chroot processes are only ever stopped by their `/proc/<pid>/root`: the firmware's own init scripts use
@@ -52,7 +60,7 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
   is recommended.
 
 ## Components
-`install.sh` · `vc-up.sh` / `vc-down.sh` · `vc-master.sh` · `connman-stub.py` · `vc-volume-bridge.py` ·
+`install.sh` · `vc-up.sh` / `vc-down.sh` · `vc-master.sh` · `connman-stub.py` · `vc-volume-bridge.py` · `vc-renderer-libs.py` ·
 `vc-ip-watch.sh` · `vc-setup.sh` · `vc-connector.service` · `vc-ip-watch.service` · `extract-connector-rootfs.sh`
 
 ## Managing it
