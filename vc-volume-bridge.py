@@ -13,14 +13,15 @@ SOCK = os.environ.get("VC_SOCK", "unix:path=/opt/rfconnector/run/dbus/system_bus
 CARD = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VC_CARD", "0")
 CTL  = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("VC_CTL", "Digital")
 IFACE = "com.raumfeld.hardwared"
-SPANDB = float(os.environ.get("VC_SPANDB", "50"))   # app 1..100 -> -SPANDB..0 dB (linear in dB)
+SPANDB = float(os.environ.get("VC_SPANDB") or 50)   # app 1..100 spans SPANDB dB (linear in dB)
+MAXDB  = float(os.environ.get("VC_MAXDB") or 0)     # level at volume 100; negative = quieter overall
 
 def amixer(*a):
     return subprocess.run(["amixer", "-c", CARD, "-q", "sset", CTL, *a],
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 def set_volume(vol):
-    db = (vol / 100.0 - 1.0) * SPANDB                 # 100 -> 0 dB, 50 -> -25 dB, 1 -> ~-50 dB
+    db = MAXDB + (vol / 100.0 - 1.0) * SPANDB         # defaults: 100 -> 0 dB, 50 -> -25 dB, 1 -> ~-50 dB
     ok = amixer("--", "%.1fdB" % db) or amixer("%d%%" % vol)   # dB where possible, otherwise percent
     amixer("unmute")                                   # silently fails on controls without a switch
     return ok

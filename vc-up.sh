@@ -182,7 +182,7 @@ echo "  master-process started; takes ~25s to come up."
 say "8) start the volume bridge (hardwared.Volume -> $VC_CARD/$VC_CTL)"
 pkill -f "^python3 [^ ]*vc-volume-bridge.py" 2>/dev/null; sleep 1
 BRIDGE=$TOOLS/vc-volume-bridge.py; [ -f "$BRIDGE" ] || BRIDGE=/tmp/vc-volume-bridge.py
-VC_LEDS="${VC_LEDS:-1}" setsid python3 "$BRIDGE" "$VC_CARD" "$VC_CTL" </dev/null >/tmp/vc-volume-bridge.log 2>&1 &
+VC_LEDS="${VC_LEDS:-1}" VC_SPANDB="${VC_SPANDB:-}" VC_MAXDB="${VC_MAXDB:-}" setsid python3 "$BRIDGE" "$VC_CARD" "$VC_CTL" </dev/null >/tmp/vc-volume-bridge.log 2>&1 &
 echo "  volume bridge started ($BRIDGE, $VC_CARD / $VC_CTL)"
 
 echo

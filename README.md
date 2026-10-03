@@ -85,7 +85,10 @@ To see what is playing: `cat /proc/asound/card0/pcm0p/sub0/hw_params` shows the 
 ## Managing it
 - Start/stop: `sudo systemctl start|stop vc-connector`
 - Volume: via the app. The bridge picks the card's own volume control (e.g. `Digital` on a HiFiBerry,
-  `PCM` on the onboard jack) or adds a software volume when there is none (HDMI); curve tunable via `VC_SPANDB`.
+  `PCM` on the onboard jack) or adds a software volume when there is none (HDMI). App volume 1–100 is
+  mapped linearly in dB: 100 = `VC_MAXDB` (default 0 dB), spanning `VC_SPANDB` (default 50 dB) down to 1.
+  Louder or quieter than your other rooms? Set e.g. `VC_MAXDB=-3` in `/opt/virtualtools/vc.conf` and
+  restart `vc-connector`.
 - Logs: `/tmp/vc-master.log`, `/tmp/connman-stub.log`, `/tmp/vc-volume-bridge.log`
 - Re-register (e.g. after deleting the room in the app): `sudo bash /opt/virtualtools/vc-setup.sh "Room name"`
 - Change the audio output: set `VC_CARD` in `/opt/virtualtools/vc.conf` to a card name from `aplay -l`
