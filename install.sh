@@ -180,7 +180,8 @@ case "$CARD" in
   *)        CARD=$(aplay -l 2>/dev/null | awk -v n="$CARD" '$1=="card" && $2==n":"{print $3; exit}') ;;
 esac
 [ -n "$CARD" ] || CARD=$(auto_card)
-printf 'VC_CARD=%q\n' "$CARD" > "$TOOLS/vc.conf"
+# VC_MAXDB = level at app volume 100: -6 dB brings the DAC in line with other Raumfeld rooms
+printf 'VC_CARD=%q\nVC_MAXDB=%q\n' "$CARD" "${VC_MAXDB:--6}" > "$TOOLS/vc.conf"
 echo "  audio output: $CARD ($(card_kind "$CARD")) -> $TOOLS/vc.conf"
 
 c "4) Packages + firmware (Connector 2 / HWID $HWID) from Teufel"
