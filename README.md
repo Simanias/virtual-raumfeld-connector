@@ -57,6 +57,8 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
   `killall`, which would also hit the Pi's own dbus and take WiFi down.
 - An **IP watcher** restarts the stack if the IP changes (self-healing); a **static IP** (DHCP reservation)
   is recommended.
+- The installer switches **WiFi power save off** (NetworkManager, `wifi.powersave = 2`) so the Pi stays
+  reachable; install with `VC_KEEP_WIFI_POWERSAVE=1` to leave it alone.
 
 ## Settings in the app
 In Connector 2 mode the app shows all settings of a real Connector 2. They are shown by device type and

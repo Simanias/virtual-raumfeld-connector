@@ -218,6 +218,15 @@ sed -i "/$UPDATES_HOST/d" "$ROOT/etc/hosts" 2>/dev/null || true
 
 c "7) Enable services"
 systemctl daemon-reload; systemctl enable vc-connector vc-ip-watch >/dev/null 2>&1 || true
+# WiFi power save off: a sleeping radio misses broadcasts (ARP/SSDP), so the Pi becomes hard to reach
+if [ -z "${VC_KEEP_WIFI_POWERSAVE:-}" ] && [ -d /etc/NetworkManager/conf.d ]; then
+  printf '# Virtual Connector: keep the WiFi radio awake so the Pi stays reachable (2 = disable power save)\n[connection]\nwifi.powersave = 2\n' \
+    > /etc/NetworkManager/conf.d/wifi-powersave-off.conf
+  systemctl reload NetworkManager 2>/dev/null || true
+  for w in /sys/class/net/*/wireless; do [ -d "$w" ] || continue
+    w=${w%/wireless}; iw dev "${w##*/}" set power_save off 2>/dev/null || true; done
+  echo "  WiFi power save switched off (VC_KEEP_WIFI_POWERSAVE=1 to keep it)"
+fi
 
 c "8) Register as a room (the system-id is adopted automatically from your Raumfeld host)"
 if [ -f "$ROOT/var/raumfeld-1.0/device-role.json" ]; then
