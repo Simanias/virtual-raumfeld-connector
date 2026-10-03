@@ -81,6 +81,7 @@ if [ "$RESUME" = 0 ]; then
     [ "$i" = 0 ] && echo "  (none)"
     echo "Or enable a DAC HAT (turns on its overlay, followed by an automatic reboot):"
     for ov in "hifiberry-dacplusadc|HiFiBerry DAC+ ADC" "hifiberry-dacplus|HiFiBerry DAC+ / DAC+ Pro" \
+              "hifiberry-dacplushd|HiFiBerry DAC+ HD / DAC2 HD" \
               "hifiberry-dac|HiFiBerry DAC (PCM5102A)" "hifiberry-digi|HiFiBerry Digi / Digi+" \
               "iqaudio-dacplus|IQaudio DAC+" "other|Other overlay (type it yourself)"; do
       i=$((i+1)); printf "  %d) %s\n" "$i" "${ov#*|}"; eval "opt_$i=overlay:${ov%%|*}"
@@ -180,6 +181,10 @@ case "$CARD" in
   *)        CARD=$(aplay -l 2>/dev/null | awk -v n="$CARD" '$1=="card" && $2==n":"{print $3; exit}') ;;
 esac
 [ -n "$CARD" ] || CARD=$(auto_card)
+# the name must be an ALSA card id from 'aplay -l' (e.g. sndrpihifiberry) — not an overlay or driver name
+if ! card_ids | grep -qx "$CARD"; then
+  echo "  sound card '$CARD' not found — choosing automatically"; CARD=$(auto_card)
+fi
 # VC_MAXDB = level at app volume 100: -6 dB brings the DAC in line with other Raumfeld rooms
 printf 'VC_CARD=%q\nVC_MAXDB=%q\n' "$CARD" "${VC_MAXDB:--6}" > "$TOOLS/vc.conf"
 echo "  audio output: $CARD ($(card_kind "$CARD")) -> $TOOLS/vc.conf"
