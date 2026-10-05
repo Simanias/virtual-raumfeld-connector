@@ -27,7 +27,7 @@ ask(){ local p="$1" d="${2:-}" k="${3:-}" a=""; if [ -n "$k" ]; then eval "a=\${
 fetch(){ if [ -f "$SRCDIR/$1" ]; then cp -f "$SRCDIR/$1" "$2"; else curl -fsSL "$REPO_RAW/$1" -o "$2"; fi; }
 bootcfg(){ [ -f /boot/firmware/config.txt ] && echo /boot/firmware/config.txt || echo /boot/config.txt; }
 # sound cards by NAME (stable across reboots) + kind: external / onboard / hdmi
-card_ids(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/{print $3}' | awk '!s[$0]++'; }
+card_ids(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/ && !/\[Loopback\]/{print $3}' | awk '!s[$0]++'; }   # never the ALSA loopback
 card_desc(){ aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | sed -E 's/^card [0-9]+: [^ ]+ \[([^]]*)\].*/\1/'; }
 card_kind(){ case "$(aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | tr 'A-Z' 'a-z')" in
   *hdmi*|*vc4*) echo hdmi;; *bcm2835*|*headphone*) echo onboard;; *) echo external;; esac; }

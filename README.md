@@ -41,16 +41,19 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
 - `hardwared`/`master-process` run **virtualised** (`RAUMFELD_VIRTUALISED_HARDWARE_ID=9`, no MCU/STA350).
 - A **ConnMan D-Bus stub** provides an "online" network on the chroot bus; the real `connmand` is
   neutralised → wlan0 is left untouched.
-- The **renderer** runs *non*-virtualised via a wrapper → it opens a real ALSA device (your DAC) instead
-  of the network stream server.
+- The **renderer** runs as a real Connector 2 (hardware id 9) but plays to a normal ALSA device (your
+  DAC) instead of the virtual network sound card. For that it loads private, patched copies of two
+  firmware libraries (`vc-renderer-libs.py`); the other firmware processes keep the originals.
+- Audio goes through the firmware's own **DSP plugin** (`pcm.raumfeld`, as on a real device) with your DAC
+  as its output. That is where the EQ runs, right in front of the sound card.
 - A **bridge** maps the app volume (`hardwared.Volume`) to your DAC's ALSA mixer, and the app's LED
   switch to the Pi's own ACT/PWR LEDs (`VC_LEDS=0` in `vc.conf` leaves them alone). A LED on a DAC HAT
   has no switch of its own (see the table below).
-- **Connector 2 mode** (automatic when your card has an input, e.g. a HiFiBerry DAC+ ADC): the renderer
-  identifies as a real Connector 2, so the app's **EQ** and **LED** settings reach the Pi (see
-  [Settings in the app](#settings-in-the-app)). This uses private, patched copies of two firmware
-  libraries for the renderer only (`vc-renderer-libs.py`). Without an input, or with `VC_MODE=basic` in
-  `vc.conf`, the renderer runs in basic mode.
+- Because the renderer identifies as a Connector 2, the app's **EQ** and **LED** settings reach the Pi
+  (see [Settings in the app](#settings-in-the-app)). This works with any sound card: with an input (e.g.
+  a HiFiBerry DAC+ ADC) the renderer opens it as its line-in, without one it runs without a line-in.
+  `VC_MODE=basic` in `vc.conf` switches this off: the renderer then runs as a plain device and only
+  volume/mute work.
 - Registration as a room uses the AP-less path (`PreconfiguredSetupController` + a simulated setup-button
   + the built-in `SimulatedCalloutServer`); the system-id is then taken over from your host.
 - Chroot processes are only ever stopped by their `/proc/<pid>/root`: the firmware's own init scripts use
@@ -61,13 +64,13 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
   reachable; install with `VC_KEEP_WIFI_POWERSAVE=1` to leave it alone.
 
 ## Settings in the app
-In Connector 2 mode the app shows all settings of a real Connector 2. They are shown by device type and
-can't be hidden individually; the ones that need Connector hardware simply do nothing on the Pi.
+The app shows all settings of a real Connector 2. They are shown by device type and can't be hidden
+individually; the ones that need Connector hardware simply do nothing on the Pi.
 
 | Setting | On the Pi |
 |---|---|
 | Volume / mute | ✅ Works — the card's volume control (or a software volume) |
-| EQ (bass / mid / treble) | ✅ Works — in the renderer's DSP chain, ±6 dB |
+| EQ (bass / mid / treble) | ✅ Works — in the firmware's DSP plugin in front of the DAC, ±6 dB, audible immediately |
 | LED | ✅ Works — the Pi's own ACT (green) / PWR (red) LEDs, also off in standby (eco mode). A LED on a DAC HAT has no switch of its own: on a HiFiBerry DAC+ ADC it stays on while the DAC is in use and goes off in standby |
 | Eco mode / standby timer | ✅ Works — the device goes into standby and wakes up when you play something. It saves no power on the Pi: the DAC stays on |
 | Fixed clock | ⚪ Accepted by the firmware (it briefly reopens the sound card), but it is meant for the Connector's optical output — no audible effect on a DAC |
@@ -75,7 +78,7 @@ can't be hidden individually; the ones that need Connector hardware simply do no
 | Line-in / line-in boost | ⚪ No effect — line-in is not supported |
 | Power button behaviour | ⚪ No effect — the Pi has no power button |
 
-In basic mode only volume/mute works; the EQ and LED settings don't reach the Pi.
+With `VC_MODE=basic` only volume/mute works; the EQ and LED settings don't reach the Pi.
 
 To see what is playing: `cat /proc/asound/card0/pcm0p/sub0/hw_params` shows the rate sent to the DAC
 (the format is always 32-bit, the renderer's output format).

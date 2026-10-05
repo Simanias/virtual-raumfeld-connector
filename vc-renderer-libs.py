@@ -8,11 +8,13 @@
 #   libraumfeldcpp-1.0.so  Hardware::getDriftCompensatorType()   -> 2 = software time-stretching
 #                          (a Connector 2 otherwise needs the "Drift compensator" mixer control of its codec)
 #                          capture device "hw:0,0" -> "vc_cap" (defined in asound.conf by vc-up.sh)
+#                          --no-input: Hardware::hasAnalogInput() -> false, for a sound card without an
+#                          input (the renderer then uses its output-only sound card, no line-in)
 #
 # Only the renderer loads these copies (LD_LIBRARY_PATH in its wrapper); hardwared and the other firmware
 # processes keep using the originals. Functions are located by symbol name, not by fixed offsets.
 #
-#   vc-renderer-libs.py <rootfs> <output dir>
+#   vc-renderer-libs.py <rootfs> <output dir> [--no-input]
 import os, struct, sys
 
 def elf_symbols(d):
@@ -61,8 +63,10 @@ def build(src, dst, patch):
     os.chmod(tmp, 0o755)
     os.replace(tmp, dst)
 
-def patch_cpp(d):
+def patch_cpp(d, no_input=False):
     patch_return(d, "_ZN6Teufel5Tools8Hardware23getDriftCompensatorTypeEv", 2)
+    if no_input:
+        patch_return(d, "_ZN6Teufel5Tools8Hardware14hasAnalogInputEv", 0)
     old, new = b"\0hw:0,0\0", b"\0vc_cap\0"            # same length, so nothing else moves
     if old not in d:
         raise ValueError("capture device name not found")
@@ -70,12 +74,14 @@ def patch_cpp(d):
 
 def main():
     root, out = sys.argv[1], sys.argv[2]
+    no_input = "--no-input" in sys.argv[3:]
     os.makedirs(out, exist_ok=True)
     lib = os.path.join(root, "usr/lib")
     build(os.path.join(lib, "libraumfeld-1.0.so"), os.path.join(out, "libraumfeld-1.0.so"),
           lambda d: patch_return(d, "raumfeld_is_virtualised_environment", 0))
-    build(os.path.join(lib, "libraumfeldcpp-1.0.so"), os.path.join(out, "libraumfeldcpp-1.0.so"), patch_cpp)
-    print("  renderer libraries prepared in", out)
+    build(os.path.join(lib, "libraumfeldcpp-1.0.so"), os.path.join(out, "libraumfeldcpp-1.0.so"),
+          lambda d: patch_cpp(d, no_input))
+    print("  renderer libraries prepared in", out, "(no line-in)" if no_input else "")
 
 if __name__ == "__main__":
     try:

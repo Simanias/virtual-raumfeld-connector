@@ -8,7 +8,7 @@ ROOT=${ROOT:-/opt/rfconnector}
 HWID=9                                  # 9 = Raumfeld Connector 2
 # --- audio output: chosen during installation (vc.conf, by card NAME), otherwise autodetect ---
 [ -f "$TOOLS/vc.conf" ] && . "$TOOLS/vc.conf"          # VC_CARD=<card name>, optional VC_CTL=<mixer>
-card_ids(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/{print $3}' | awk '!s[$0]++'; }
+card_ids(){ aplay -l 2>/dev/null | awk '/^card [0-9]+:/ && !/\[Loopback\]/{print $3}' | awk '!s[$0]++'; }   # never the ALSA loopback
 card_kind(){ case "$(aplay -l 2>/dev/null | grep -m1 "^card [0-9]*: $1 " | tr 'A-Z' 'a-z')" in
   *hdmi*|*vc4*) echo hdmi;; *bcm2835*|*headphone*) echo onboard;; *) echo external;; esac; }
 auto_card(){ local k c; for k in external onboard hdmi; do for c in $(card_ids); do
@@ -62,32 +62,44 @@ say "2b) renderer wrapper (plays to a real ALSA device instead of the network st
 R="$ROOT/raumfeld/renderer"
 [ -f "$R/renderer.bin" ] || mv "$R/renderer" "$R/renderer.bin"
 # Connector 2 mode: the renderer identifies as a real Connector 2 (hardware id 9), so the EQ and LED
-# settings from the app reach this device. A Connector 2 renderer always opens a line-in as well, so
-# this needs a card with an input; otherwise (or with VC_MODE=basic) the renderer runs non-virtualised.
-MODE=basic
-if [ "${VC_MODE:-auto}" != basic ] && arecord -l 2>/dev/null | grep -q "^card [0-9]*: $VC_CARD " \
-   && python3 "$TOOLS/vc-renderer-libs.py" "$ROOT" "$R/vc-lib"; then MODE=connector2; fi
+# settings from the app reach this device. With an input on the card the renderer also opens it as its
+# line-in; without one it is told there is no line-in (--no-input) and gets a DSP chain without it.
+# VC_MODE=basic keeps the renderer non-virtualised instead (no EQ/LED).
+MODE=basic; CAP=""
+if [ "${VC_MODE:-auto}" != basic ]; then
+  arecord -l 2>/dev/null | grep -q "^card [0-9]*: $VC_CARD " && CAP="hw:$VC_CARD"
+  python3 "$TOOLS/vc-renderer-libs.py" "$ROOT" "$R/vc-lib" $([ -n "$CAP" ] || echo --no-input) && MODE=connector2
+fi
 if [ "$MODE" = connector2 ]; then
   printf '#!/bin/sh\n# Connector 2 (hardware id 9) that plays to ALSA — see vc-renderer-libs.py\nLD_LIBRARY_PATH=/raumfeld/renderer/vc-lib exec /raumfeld/renderer/renderer.bin "$@"\n' > "$R/renderer"
-  # a real Connector 2 does its EQ in a DSP plugin in front of its codec: add that EQ module to the renderer's chain
+  # the renderer's DSP chain: the firmware's own (with line-in) plus the EQ module, or a plain one without line-in
   X="$R/dsp-config/raumfeld-connector-2.xml"
-  if ! grep -q 'id="user-eq"' "$X"; then
-    cp -a "$X" "$X.orig"
-    python3 - "$X" <<'PY'
+  [ -f "$X.orig" ] || cp -a "$X" "$X.orig"
+  python3 - "$X" "${CAP:+input}" <<'PY'
 import re, sys
-p = sys.argv[1]; t = open(p).read()
-t = t.replace('<module id="output" type="output">', '<stereo-module id="user-eq" type="equalizer">\n'
-              '      <parameter id="gain-correction">yes</parameter>\n    </stereo-module>\n'
-              '    <module id="output" type="output">', 1)
-t = re.sub(r'<cable out="([^"]+)" in="output"/>',
-           r'<cable out="\1" in="user-eq"/>\n    <cable out="user-eq" in="output"/>', t, count=1)
-open(p, "w").write(t)
+p = sys.argv[1]
+EQ = ('<stereo-module id="user-eq" type="equalizer">\n      <parameter id="gain-correction">yes</parameter>\n'
+      '    </stereo-module>\n')
+if sys.argv[2:] == ["input"]:
+    t = open(p + ".orig").read()
+    t = t.replace('<module id="output" type="output">', EQ + '    <module id="output" type="output">', 1)
+    t = re.sub(r'<cable out="([^"]+)" in="output"/>',
+               r'<cable out="\1" in="user-eq"/>\n    <cable out="user-eq" in="output"/>', t, count=1)
+else:
+    t = ('<dsp>\n  <modules>\n    <module id="stream-decoder" type="input"/>\n'
+         '    <stereo-module id="timestretcher" type="timestretcher"/>\n    ' + EQ +
+         '    <module id="output" type="output">\n      <parameter id="interleave-pattern">01</parameter>\n'
+         '    </module>\n  </modules>\n  <cabling>\n    <cable out="stream-decoder" in="timestretcher"/>\n'
+         '    <cable out="timestretcher" in="user-eq"/>\n    <cable out="user-eq" in="output"/>\n'
+         '  </cabling>\n</dsp>\n')
+try: same = open(p).read() == t
+except OSError: same = False
+if not same: open(p, "w").write(t)
 PY
-  fi
-  echo "  Connector 2 mode (EQ + LED from the app)"
+  echo "  Connector 2 mode (EQ + LED from the app), line-in: ${CAP:-none}"
 else
   printf '#!/bin/sh\nunset RAUMFELD_VIRTUALISED_HARDWARE_ID\nexec /raumfeld/renderer/renderer.bin "$@"\n' > "$R/renderer"
-  echo "  basic mode (no EQ/LED: the card has no input, or VC_MODE=basic)"
+  echo "  basic mode (no EQ/LED: VC_MODE=basic, or the renderer libraries could not be prepared)"
 fi
 chmod +x "$R/renderer"
 
@@ -120,22 +132,27 @@ ctl.!default { type hw; card "$VC_CARD" }
 EOF
 fi
 if [ "$MODE" = connector2 ]; then
-  # a Connector 2 renderer plays to "raumfeld:<args>" (the DSP plugin on a real device) and records its
-  # line-in from "vc_cap" (renamed from hw:0,0 in vc-renderer-libs.py) -> both go to the chosen card
+  # a Connector 2 renderer plays to "raumfeld:<in bits>,<out bits>,<channels>,<card>,<device>,<delay>": the
+  # firmware's own DSP plugin (it runs the renderer's DSP chain, with the EQ, right in front of the sound
+  # card). Same definition as on a real device, but with our output as its slave instead of hw:<card>.
   cat >> "$ROOT/etc/asound.conf" <<EOF
 pcm.raumfeld {
-  @args [ A B C D E F ]
-  @args.A { type string default "" }
-  @args.B { type string default "" }
-  @args.C { type string default "" }
-  @args.D { type string default "" }
-  @args.E { type string default "" }
-  @args.F { type string default "" }
-  type plug
-  slave.pcm "$OUT"
+  @args [ INBITS OUTBITS OUTCHANNELS CARD DEVICE DELAY ]
+  @args.INBITS.type = integer
+  @args.OUTBITS.type = integer
+  @args.OUTCHANNELS.type = integer
+  @args.CARD.type = integer
+  @args.DEVICE.type = integer
+  @args.DELAY.type = integer
+  type raumfeld
+  in-bits \$INBITS
+  out-bits \$OUTBITS
+  out-channels \$OUTCHANNELS
+  slave.pcm { type plug; slave.pcm "$OUT" }
 }
-pcm.vc_cap { type plug; slave.pcm "hw:$VC_CARD" }
 EOF
+  # the line-in (renamed from hw:0,0 to vc_cap in vc-renderer-libs.py) is the chosen card's own input
+  [ -n "$CAP" ] && echo "pcm.vc_cap { type plug; slave.pcm \"$CAP\" }" >> "$ROOT/etc/asound.conf"
 fi
 echo "  volume control: $VC_CTL"
 
