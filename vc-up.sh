@@ -78,7 +78,8 @@ if [ "$MODE" = connector2 ]; then
   python3 - "$X" "${CAP:+input}" <<'PY'
 import re, sys
 p = sys.argv[1]
-EQ = ('<stereo-module id="user-eq" type="equalizer">\n      <parameter id="gain-correction">yes</parameter>\n'
+# gain-correction (lowering the overall level when a band is boosted) is off: a boost should sound like a boost
+EQ = ('<stereo-module id="user-eq" type="equalizer">\n      <parameter id="gain-correction">no</parameter>\n'
       '    </stereo-module>\n')
 if sys.argv[2:] == ["input"]:
     t = open(p + ".orig").read()

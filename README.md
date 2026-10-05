@@ -70,7 +70,7 @@ individually; the ones that need Connector hardware simply do nothing on the Pi.
 | Setting | On the Pi |
 |---|---|
 | Volume / mute | ✅ Works — the card's volume control (or a software volume) |
-| EQ (bass / mid / treble) | ✅ Works — in the firmware's DSP plugin in front of the DAC, ±6 dB, audible immediately |
+| EQ (bass / mid / treble) | ✅ Works — in the firmware's DSP plugin in front of the DAC, ±6 dB, audible immediately. The firmware's gain correction (lowering the overall level when a band is boosted) is off, so a large boost at full volume can clip |
 | LED | ✅ Works — the Pi's own ACT (green) / PWR (red) LEDs, also off in standby (eco mode). A LED on a DAC HAT has no switch of its own: on a HiFiBerry DAC+ ADC it stays on while the DAC is in use and goes off in standby |
 | Eco mode / standby timer | ✅ Works — the device goes into standby and wakes up when you play something. It saves no power on the Pi: the DAC stays on |
 | Fixed clock | ⚪ Accepted by the firmware (it briefly reopens the sound card), but it is meant for the Connector's optical output — no audible effect on a DAC |
