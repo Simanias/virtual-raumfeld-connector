@@ -9,8 +9,12 @@ IFACE=${IFACE:-}
 [ -n "$IFACE" ] || IFACE=$(ip route 2>/dev/null | awk '/^default/{print $5; exit}')
 IFACE=${IFACE:-wlan0}
 last=""
+# during a setup with the Raumfeld app the WiFi is the "Raumfeld Setup" access point (192.168.0.1):
+# that is not a network change — restarting then would end the setup
+setup_ap(){ nmcli -t -f NAME con show --active 2>/dev/null | grep -qx "vc-setup-ap"; }
 while true; do
   ip=$(ip -4 -o addr show "$IFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+  if setup_ap; then sleep 15; continue; fi
   if [ -n "$ip" ] && [ "$ip" != "$last" ]; then
     if [ -n "$last" ]; then
       logger -t vc-ip-watch "IP of $IFACE changed: $last -> $ip; restarting vc-connector"

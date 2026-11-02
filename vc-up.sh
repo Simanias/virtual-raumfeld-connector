@@ -62,12 +62,21 @@ say "2b) renderer wrapper (plays to a real ALSA device instead of the network st
 R="$ROOT/raumfeld/renderer"
 [ -f "$R/renderer.bin" ] || mv "$R/renderer" "$R/renderer.bin"
 # Connector 2 mode: the renderer identifies as a real Connector 2 (hardware id 9), so the EQ and LED
-# settings from the app reach this device. With an input on the card the renderer also opens it as its
-# line-in; without one it is told there is no line-in (--no-input) and gets a DSP chain without it.
+# settings from the app reach this device. A real Connector 2 always has a line-in, and the renderer's
+# timing relies on it: its audio loop then follows the input and keeps the DAC queue short. Without an
+# input the queue runs full and the device plays ~0.1 s behind the rest of the room. So a card without
+# an input gets a silent one from the ALSA loopback, clocked by the DAC itself (timer_source), so it can
+# never drift against the output. Only if that fails: no line-in at all (--no-input).
 # VC_MODE=basic keeps the renderer non-virtualised instead (no EQ/LED).
 MODE=basic; CAP=""
 if [ "${VC_MODE:-auto}" != basic ]; then
-  arecord -l 2>/dev/null | grep -q "^card [0-9]*: $VC_CARD " && CAP="hw:$VC_CARD"
+  if arecord -l 2>/dev/null | grep -q "^card [0-9]*: $VC_CARD "; then CAP="hw:$VC_CARD"
+  else
+    [ -e /proc/asound/VCLoop ] || lsmod | grep -q "^snd_aloop " || \
+      modprobe snd-aloop id=VCLoop index=7 pcm_substreams=1 timer_source="$VC_CARD.0.0" 2>/dev/null
+    for i in 1 2 3 4 5; do [ -e /proc/asound/VCLoop ] && break; sleep 0.5; done
+    [ -e /proc/asound/VCLoop ] && CAP="hw:VCLoop,1,0"
+  fi
   python3 "$TOOLS/vc-renderer-libs.py" "$ROOT" "$R/vc-lib" $([ -n "$CAP" ] || echo --no-input) && MODE=connector2
 fi
 if [ "$MODE" = connector2 ]; then
@@ -133,6 +142,15 @@ ctl.!default { type hw; card "$VC_CARD" }
 EOF
 fi
 if [ "$MODE" = connector2 ]; then
+  # VC_DELAY_MS: extra output latency the renderer should allow for (hw_delay_ms, as a real device states
+  # the latency of its own hardware) — e.g. when this device plays behind the rest of its room
+  SLAVE="\"$OUT\""
+  case "${VC_DELAY_MS:-0}" in
+    ''|0) ;;
+    *[!0-9]*) echo "  !! VC_DELAY_MS must be a number of milliseconds — ignored" ;;
+    *) if [ "$OUT" = "hw:$VC_CARD" ]; then SLAVE="{ type hw; card \"$VC_CARD\"; hw_delay_ms $VC_DELAY_MS }"
+       else echo "  !! VC_DELAY_MS needs a card with its own volume control — ignored"; fi ;;
+  esac
   # a Connector 2 renderer plays to "raumfeld:<in bits>,<out bits>,<channels>,<card>,<device>,<delay>": the
   # firmware's own DSP plugin (it runs the renderer's DSP chain, with the EQ, right in front of the sound
   # card). Same definition as on a real device, but with our output as its slave instead of hw:<card>.
@@ -149,7 +167,7 @@ pcm.raumfeld {
   in-bits \$INBITS
   out-bits \$OUTBITS
   out-channels \$OUTCHANNELS
-  slave.pcm { type plug; slave.pcm "$OUT" }
+  slave.pcm { type plug; slave.pcm $SLAVE }
 }
 EOF
   # the line-in (renamed from hw:0,0 to vc_cap in vc-renderer-libs.py) is the chosen card's own input

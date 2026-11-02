@@ -7,11 +7,10 @@ its **own DAC** — shows up as a full Raumfeld renderer/room in the Raumfeld ap
 ```bash
 wget -qO- https://raw.githubusercontent.com/Simanias/virtual-raumfeld-connector/main/install.sh | sudo bash
 ```
-The installer asks only two things:
-- **audio output** — an external/USB DAC, the onboard 3.5 mm jack, HDMI, or enable a DAC HAT overlay
-  (then it reboots once and continues by itself). With a DAC the onboard jack is switched off; set
-  `VC_KEEP_ONBOARD=1` to keep it. The choice is stored by card *name*, so it survives card renumbering.
-- **room name** (default `Virtual Connector`) — renameable later in the app.
+The installer asks only one thing, the **audio output**: an external/USB DAC, the onboard 3.5 mm jack,
+HDMI, or enable a DAC HAT overlay (then it reboots once and continues by itself). With a DAC the onboard
+jack is switched off; set `VC_KEEP_ONBOARD=1` to keep it. The choice is stored by card *name*, so it
+survives card renumbering.
 
 Before anything is changed, the installer looks for your **Raumfeld host** on the network (SSDP) and shows
 it, e.g. `Raumfeld host found: Raumfeld Soundbar (192.168.1.41)`. If none is found it asks for the host's
@@ -19,17 +18,29 @@ IP address to diagnose the problem: a host that is reachable but not discoverabl
 is blocked between the Pi and your Raumfeld devices (different subnet/VLAN, guest WiFi / client isolation,
 IGMP snooping or "multicast enhancement" on the router/access point). Raumfeld itself only finds the host
 via broadcast/multicast, so that has to be fixed — entering an IP cannot replace it. Press Enter to install
-without registering and register later with `vc-setup.sh` (see below).
+without setting it up and do that later (see below).
 
-It then registers the Pi as a room in the Raumfeld system on your network. **No system-id is needed**:
-the Pi adopts the system-id from your Raumfeld host automatically during registration. After that
-everything runs and **starts automatically on reboot**.
+### Setting it up with the Raumfeld app
+At the end of the installation the Pi goes into setup mode, **like a real Raumfeld device**: it opens the
+WiFi **"Raumfeld Setup"**. In the Raumfeld app you add a device, connect to "Raumfeld Setup" when asked,
+choose **LAN or WiFi** (the app shows the WiFi networks the Pi can see) and pick a **room — new or
+existing**, so two devices can share a room. The system-id is taken over from your Raumfeld host.
+After that everything runs and **starts automatically on reboot**.
+
+- A Pi that only has WiFi is off the network during the setup (its WiFi is the access point), just like a
+  real device, and SSH drops. If the setup is not finished within 15 minutes, its own WiFi connection
+  comes back.
+- To set it up again later (another room, another network): `sudo bash /opt/virtualtools/vc-setup.sh --app`
+  — the equivalent of the setup button.
+- Without the app: install with `VC_SETUP=auto` (and optionally `VC_ROOM="<name>"`); the installer then
+  asks for a room name and registers the Pi as a new room by itself, as earlier versions did.
 
 In the app the device shows up with model **Virtual Connector**; its player follows the standard Raumfeld
 naming, `Connector <room name>` (like `Speaker Bar` or `Connector Kitchen`).
 
-Headless/non-interactive: `VC_CARD=<card name>` or `VC_OVERLAY=<overlay>`, `VC_ROOM="<name>"`,
-`VC_HOST=<ip>|none` (only used when auto-discovery fails; `VC_DEBUG=1` for a trace).
+Headless/non-interactive: `VC_CARD=<card name>` or `VC_OVERLAY=<overlay>`, `VC_SETUP=app|auto`,
+`VC_ROOM="<name>"` (with `auto`), `VC_HOST=<ip>|none` (only used when auto-discovery fails; `VC_DEBUG=1`
+for a trace).
 
 ## Firmware & copyright
 This repo contains **only our own tooling** — no Teufel firmware. On install, the Connector firmware is
@@ -39,8 +50,11 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
 ## How it works
 - Universal AM33xx rootfs (armhf) in a chroot at `/opt/rfconnector`.
 - `hardwared`/`master-process` run **virtualised** (`RAUMFELD_VIRTUALISED_HARDWARE_ID=9`, no MCU/STA350).
-- A **ConnMan D-Bus stub** provides an "online" network on the chroot bus; the real `connmand` is
-  neutralised → wlan0 is left untouched.
+- A **ConnMan D-Bus stub** (`connman-stub.py`) replaces the firmware's own `connmand` and translates to
+  the Pi's NetworkManager: it reports the real cable and WiFi networks, starts the "Raumfeld Setup" access
+  point when the firmware asks for it, and connects to the WiFi network chosen in the app. Outside a
+  setup it never changes the Pi's network. Installs from before the app setup keep working: their
+  connection is still reported the way it was then.
 - The **renderer** runs as a real Connector 2 (hardware id 9) but plays to a normal ALSA device (your
   DAC) instead of the virtual network sound card. For that it loads private, patched copies of two
   firmware libraries (`vc-renderer-libs.py`); the other firmware processes keep the originals.
@@ -50,12 +64,14 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
   switch to the Pi's own ACT/PWR LEDs (`VC_LEDS=0` in `vc.conf` leaves them alone). A LED on a DAC HAT
   has no switch of its own (see the table below).
 - Because the renderer identifies as a Connector 2, the app's **EQ** and **LED** settings reach the Pi
-  (see [Settings in the app](#settings-in-the-app)). This works with any sound card: with an input (e.g.
-  a HiFiBerry DAC+ ADC) the renderer opens it as its line-in, without one it runs without a line-in.
-  `VC_MODE=basic` in `vc.conf` switches this off: the renderer then runs as a plain device and only
-  volume/mute work.
-- Registration as a room uses the AP-less path (`PreconfiguredSetupController` + a simulated setup-button
-  + the built-in `SimulatedCalloutServer`); the system-id is then taken over from your host.
+  (see [Settings in the app](#settings-in-the-app)). This works with any sound card. A real Connector 2
+  always has a line-in, and the renderer's timing relies on it: with an input (e.g. a HiFiBerry DAC+ ADC)
+  the renderer opens it; without one it gets a silent input from the ALSA loopback (`snd-aloop`),
+  clocked by the DAC itself so it cannot drift. `VC_MODE=basic` in `vc.conf` switches all this off: the
+  renderer then runs as a plain device and only volume/mute work.
+- The setup is the firmware's own: a simulated setup button starts its setup state machine (access point,
+  network choice, room). `VC_SETUP=auto` uses the AP-less path instead (`PreconfiguredSetupController` +
+  the built-in `SimulatedCalloutServer`).
 - Chroot processes are only ever stopped by their `/proc/<pid>/root`: the firmware's own init scripts use
   `killall`, which would also hit the Pi's own dbus and take WiFi down.
 - An **IP watcher** restarts the stack if the IP changes (self-healing); a **static IP** (DHCP reservation)
@@ -96,7 +112,12 @@ To see what is playing: `cat /proc/asound/card0/pcm0p/sub0/hw_params` shows the 
   your other rooms? Change it in `/opt/virtualtools/vc.conf` (0 = the DAC's full level) and restart
   `vc-connector`.
 - Logs: `/tmp/vc-master.log`, `/tmp/connman-stub.log`, `/tmp/vc-volume-bridge.log`
-- Re-register (e.g. after deleting the room in the app): `sudo bash /opt/virtualtools/vc-setup.sh "Room name"`
+- Set up again (another room or network, or after deleting it in the app):
+  `sudo bash /opt/virtualtools/vc-setup.sh --app`, then add it in the Raumfeld app.
+  Without the app: `sudo bash /opt/virtualtools/vc-setup.sh "Room name"` (always a new room).
+- Plays behind the other devices in its room? Set `VC_DELAY_MS=<ms>` in `/opt/virtualtools/vc.conf` and
+  restart `vc-connector`: the renderer then allows that much extra output latency and plays earlier. Tune
+  it by ear (one Pi 4 with a HiFiBerry DAC+ HD needed 1850).
 - Change the audio output: set `VC_CARD` in `/opt/virtualtools/vc.conf` to a card name from `aplay -l`
   (e.g. `sndrpihifiberry`, `Headphones`) and run `sudo systemctl restart vc-connector`.
 

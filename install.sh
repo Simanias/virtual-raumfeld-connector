@@ -51,6 +51,7 @@ print(" ".join(sorted(seen)))
 PY
 }
 host_name(){ curl -sL --max-time 4 "http://$1:47365/getHostInfo" 2>/dev/null | sed -n 's:.*<hostName>\(.*\)</hostName>.*:\1:p'; }
+later(){ if [ "${SETUP:-app}" = auto ]; then echo "sudo bash $TOOLS/vc-setup.sh \"$ROOM\""; else echo "sudo bash $TOOLS/vc-setup.sh --app"; fi; }
 
 [ "$(id -u)" = 0 ] || { echo "Run as root:  sudo bash install.sh"; exit 1; }
 mkdir -p "$TOOLS"
@@ -98,9 +99,14 @@ if [ "$RESUME" = 0 ]; then
     echo "  selected: ${OVERLAY:+overlay $OVERLAY → }${CARD}"
   fi
 
-  c "2) Name"
-  echo "This becomes the name of the room/player in the Raumfeld app (can also be changed later in the app)."
-  ROOM=$(ask "Room name [Virtual Connector]: " "${VC_DEVNAME:-Virtual Connector}" VC_ROOM)
+  SETUP="${VC_SETUP:-app}"   # app = set up with the Raumfeld app, like a real device; auto = without the app
+  if [ "$SETUP" = auto ]; then
+    c "2) Name"
+    echo "This becomes the name of the room/player in the Raumfeld app (can also be changed later in the app)."
+    ROOM=$(ask "Room name [Virtual Connector]: " "${VC_DEVNAME:-Virtual Connector}" VC_ROOM)
+  else
+    ROOM="${VC_ROOM:-Virtual Connector}"   # the room is chosen in the Raumfeld app during the setup
+  fi
   DEVNAME="$ROOM"
   SYSID="${VC_SYSID:-}"      # normally empty: the device adopts the system-id from your host automatically
 
@@ -115,7 +121,7 @@ if [ "$RESUME" = 0 ]; then
     HOSTIP=$(ask "IP address of your Raumfeld host (Enter = install without registering): " "" VC_HOST)
     if [ -z "$HOSTIP" ] || [ "$HOSTIP" = none ]; then
       REGISTER=0; HOSTIP=""
-      echo "  continuing without registration — register later with:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\""
+      echo "  continuing without registration — set it up later with:  $(later)"
     elif hn=$(host_name "$HOSTIP"); [ -n "$hn" ]; then
       echo "  $HOSTIP is a Raumfeld host ($hn) and reachable, but automatic discovery does NOT work."
       echo "  Raumfeld needs broadcast/multicast between the Pi and your Raumfeld devices. Check that they are on"
@@ -133,6 +139,7 @@ if [ "$RESUME" = 0 ]; then
 
   # keep the choices for the resume after the reboot
   { echo "DEVNAME=$(printf %q "$DEVNAME")"; echo "ROOM=$(printf %q "$ROOM")"; echo "SYSID=$(printf %q "$SYSID")"
+    echo "SETUP=$(printf %q "$SETUP")"
     echo "CARD=$(printf %q "$CARD")"; echo "OVERLAY=$(printf %q "$OVERLAY")"
     echo "REGISTER=$(printf %q "$REGISTER")"; echo "HOSTIP=$(printf %q "$HOSTIP")"; } > "$CONF"
 
@@ -166,14 +173,16 @@ ExecStart=/bin/bash -c 'curl -fsSL $REPO_RAW/install.sh | bash -s -- --resume'
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload; systemctl enable $RESUME_SVC >/dev/null 2>&1
-    echo "  the installation continues automatically after the reboot. Rebooting in 5s..."; sleep 5; reboot; exit 0
+    echo "  the installation continues automatically after the reboot. Rebooting in 5s..."
+    [ "$SETUP" = auto ] || echo "  When it is done the WiFi \"Raumfeld Setup\" appears: add the device in the Raumfeld app."
+    sleep 5; reboot; exit 0
   fi
 fi
 
 # ---------- Phase 2: install (inline, or via the resume after the reboot) ----------
 [ -f "$CONF" ] && . "$CONF"
 : "${DEVNAME:=Virtual Connector}"; : "${ROOM:=$DEVNAME}"; : "${SYSID:=}"; : "${CARD:=}"; : "${OVERLAY:=}"
-: "${REGISTER:=1}"; : "${HOSTIP:=}"
+: "${REGISTER:=1}"; : "${HOSTIP:=}"; : "${SETUP:=app}"
 # store the chosen audio output by card NAME (after an overlay choice: the new DAC after the reboot)
 case "$CARD" in
   ''|auto)  CARD=$(auto_card) ;;
@@ -234,10 +243,13 @@ if [ -z "${VC_KEEP_WIFI_POWERSAVE:-}" ] && [ -d /etc/NetworkManager/conf.d ]; th
 fi
 
 c "8) Register as a room (the system-id is adopted automatically from your Raumfeld host)"
+APPSETUP=0
 if [ -f "$ROOT/var/raumfeld-1.0/device-role.json" ]; then
   echo "  already registered — skipping"
 elif [ "$REGISTER" != 1 ]; then
-  echo "  skipped (no Raumfeld host) — register later with:  sudo bash $TOOLS/vc-setup.sh \"$ROOM\""
+  echo "  skipped (no Raumfeld host) — set it up later with:  $(later)"
+elif [ "$SETUP" != auto ]; then
+  echo "  with the Raumfeld app — the setup starts at the end of the installation"; APPSETUP=1
 else
   [ -n "$HOSTIP" ] && echo "  host: $(host_name "$HOSTIP") ($HOSTIP)"
   bash "$TOOLS/vc-setup.sh" "$ROOM" "$SYSID" \
@@ -257,3 +269,8 @@ IP=$(ip -4 -o addr show "$(ip route|awk '/^default/{print $5;exit}')" 2>/dev/nul
 echo "Virtual Connector '$DEVNAME' is running (IP ${IP:-?}), audio -> $CARD ($(card_kind "$CARD")), starts automatically after a reboot."
 echo "Different audio output later? Change VC_CARD in $TOOLS/vc.conf and run: sudo systemctl restart vc-connector"
 echo "TIP: give the Pi a fixed IP (DHCP reservation) to avoid rediscovery hiccups."
+if [ "$APPSETUP" = 1 ]; then
+  echo
+  # last step: the access point may take the Pi (and an SSH session over WiFi) off the network
+  bash "$TOOLS/vc-setup.sh" --app || echo "  (setup mode could not be started — retry with:  sudo bash $TOOLS/vc-setup.sh --app)"
+fi
