@@ -27,6 +27,8 @@ choose **LAN or WiFi** (the app shows the WiFi networks the Pi can see) and pick
 existing**, so two devices can share a room. The system-id is taken over from your Raumfeld host.
 After that everything runs and **starts automatically on reboot**.
 
+- The access point needs **NetworkManager** on the Pi (the default on Raspberry Pi OS since Bookworm);
+  without it, install with `VC_SETUP=auto`.
 - A Pi that only has WiFi is off the network during the setup (its WiFi is the access point), just like a
   real device, and SSH drops. If the setup is not finished within 15 minutes, its own WiFi connection
   comes back.
@@ -91,13 +93,24 @@ individually; the ones that need Connector hardware simply do nothing on the Pi.
 | Eco mode / standby timer | ✅ Works — the device goes into standby and wakes up when you play something. It saves no power on the Pi: the DAC stays on |
 | Fixed clock | ⚪ Accepted by the firmware (it briefly reopens the sound card), but it is meant for the Connector's optical output — no audible effect on a DAC |
 | Maximum sample rate | ⚪ No effect — the source rate is played unchanged (e.g. 44.1 or 192 kHz). A DAC that can't handle a rate still works: ALSA converts it automatically |
-| Line-in / line-in boost | ⚪ No effect — line-in is not supported |
+| Line-in / line-in boost | ⚪ No effect — line-in is not supported (a card's input is only used internally, for the renderer's timing) |
 | Power button behaviour | ⚪ No effect — the Pi has no power button |
 
 With `VC_MODE=basic` only volume/mute works; the EQ and LED settings don't reach the Pi.
 
 To see what is playing: `cat /proc/asound/card0/pcm0p/sub0/hw_params` shows the rate sent to the DAC
 (the format is always 32-bit, the renderer's output format).
+
+## Rooms, players and Spotify
+- Every Raumfeld room has its own player on the host, named after the room (e.g. `Marshall`); every device
+  also has its own player (`Connector <room>`). To play on a whole room — in sync when it has more than one
+  device — play to the **room**: in the Raumfeld app, or the room's player in other apps (Music Assistant,
+  Home Assistant, DLNA apps). A device's own player plays on that one Pi only. Apps that find players via
+  DLNA may list both.
+- **Spotify Connect**: with Raumfeld's Spotify mode set to *single room* every device appears in Spotify on
+  its own — numbered when a room has more than one (`Marshall 1`, `Marshall 2`) — and plays on that device
+  only; the firmware does this for real Teufel devices too. Set the Spotify mode to *multiroom* in the
+  Raumfeld app to get one Spotify device per room that plays on all its devices.
 
 ## Components
 `install.sh` · `vc-up.sh` / `vc-down.sh` · `vc-master.sh` · `connman-stub.py` · `vc-volume-bridge.py` · `vc-renderer-libs.py` ·
