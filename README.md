@@ -112,9 +112,23 @@ To see what is playing: `cat /proc/asound/card0/pcm0p/sub0/hw_params` shows the 
   only; the firmware does this for real Teufel devices too. Set the Spotify mode to *multiroom* in the
   Raumfeld app to get one Spotify device per room that plays on all its devices.
 
+## Firmware updates
+Update the Raumfeld system in the app as usual: the Virtual Connector updates along with your other
+devices. A real device boots an update kernel (kexec) to flash itself, which can't work on a Pi — the
+firmware would end up rebooting the whole Pi. So `vc-up.sh` replaces the firmware's `kexec` with a
+stand-in that hands the update to `vc-update.sh` (started by the IP watcher). That checks the update file
+(its SHA-256), extracts the new firmware next to the current one, carries over the device's identity and
+settings (`var/raumfeld-1.0`), swaps the folders and restarts — about 30 seconds of silence. The previous
+firmware is kept in `/opt/rfconnector.prev`.
+
+- Manually: `sudo bash /opt/virtualtools/vc-update.sh` (newest firmware from Teufel's server),
+  `--check` (download, extract and check only) or `--rollback` (back to the previous firmware).
+- Installs from before this mechanism: update the tools first (re-run the installer) — otherwise the
+  firmware's own update path runs.
+
 ## Components
 `install.sh` · `vc-up.sh` / `vc-down.sh` · `vc-master.sh` · `connman-stub.py` · `vc-volume-bridge.py` · `vc-renderer-libs.py` ·
-`vc-ip-watch.sh` · `vc-setup.sh` · `vc-connector.service` · `vc-ip-watch.service` · `extract-connector-rootfs.sh`
+`vc-ip-watch.sh` · `vc-setup.sh` · `vc-update.sh` · `vc-connector.service` · `vc-ip-watch.service` · `extract-connector-rootfs.sh`
 
 ## Managing it
 - Start/stop: `sudo systemctl start|stop vc-connector`
@@ -135,6 +149,5 @@ To see what is playing: `cat /proc/asound/card0/pcm0p/sub0/hw_params` shows the 
   (e.g. `sndrpihifiberry`, `Headphones`) and run `sudo systemctl restart vc-connector`.
 
 ## ⚠️ Notes
-- The installer fetches the newest Connector firmware, so the app reports it as up to date. **Do not run a
-  firmware update** on this device if one is ever offered — there is no real flash; reinstall instead.
+- Firmware updates: see [Firmware updates](#firmware-updates).
 - Reverse-engineering / interoperability for personal use; not affiliated with Teufel/Raumfeld.

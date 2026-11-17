@@ -12,7 +12,13 @@ last=""
 # during a setup with the Raumfeld app the WiFi is the "Raumfeld Setup" access point (192.168.0.1):
 # that is not a network change — restarting then would end the setup
 setup_ap(){ nmcli -t -f NAME con show --active 2>/dev/null | grep -qx "vc-setup-ap"; }
+ROOT=${ROOT:-/opt/rfconnector}; TOOLS=${TOOLS:-/opt/virtualtools}
 while true; do
+  # firmware update started from the Raumfeld app: our kexec stand-in left a request (see vc-up.sh)
+  if [ -f "$ROOT/tmp/vc-update-request" ] && ! systemctl -q is-active vc-firmware-update; then
+    logger -t vc-ip-watch "firmware update requested; running vc-update.sh"
+    systemd-run --quiet --collect --unit vc-firmware-update /bin/bash "$TOOLS/vc-update.sh" --request
+  fi
   ip=$(ip -4 -o addr show "$IFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
   if setup_ap; then sleep 15; continue; fi
   if [ -n "$ip" ] && [ "$ip" != "$last" ]; then

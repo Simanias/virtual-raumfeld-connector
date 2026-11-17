@@ -57,6 +57,34 @@ mountpoint -q "$ROOT/run"  || mount -t tmpfs tmpfs "$ROOT/run"
 
 say "2) neutralise connmand (wlan0 is left alone)"
 [ -e "$ROOT/usr/sbin/connmand" ] && mv "$ROOT/usr/sbin/connmand" "$ROOT/usr/sbin/connmand.real" && echo "  renamed" || echo "  already neutralised"
+# the rest of the firmware preparation also runs on every start, so a fresh firmware (vc-update.sh) gets it:
+# model label shown in the app
+LIB="$ROOT/usr/lib/libraumfeld-1.0.so"
+if [ -f "$LIB" ] && ! grep -qa 'Virtual Connector' "$LIB"; then
+  [ -f "$LIB.orig" ] || cp -a "$LIB" "$LIB.orig"
+  python3 - "$LIB" <<'PY' && echo "  model label -> Virtual Connector"
+import sys
+lib = sys.argv[1]; d = open(lib, "rb").read()
+o, n = b"Raumfeld Connector\x00", b"Virtual Connector\x00\x00"
+if o not in d: sys.exit(1)
+open(lib + ".new", "wb").write(d.replace(o, n))
+PY
+  [ -f "$LIB.new" ] && chmod --reference="$LIB" "$LIB.new" && mv "$LIB.new" "$LIB"
+fi
+# no update block in /etc/hosts (it made the setup hang)
+sed -i '/updates.raumfeld.com/d' "$ROOT/etc/hosts" 2>/dev/null || true
+# firmware updates: the firmware boots its update kernel with kexec, which can't work on a Pi (and its
+# fallback reboots the whole Pi). A stand-in hands the update to vc-update.sh (started by vc-ip-watch)
+K="$ROOT/usr/sbin/kexec"
+if [ -e "$K" ] && ! grep -q "vc-update-request" "$K" 2>/dev/null; then
+  [ -e "$K.real" ] || mv "$K" "$K.real"
+  printf '%s\n' '#!/bin/sh' \
+    '# Virtual Connector: stands in for kexec (see vc-up.sh). Records the update request for vc-update.sh' \
+    '# on the host and waits to be stopped by it, instead of letting the firmware reboot the Pi.' \
+    'echo "$(date "+%F %T") $*" > /tmp/vc-update-request' \
+    'while :; do sleep 3600; done' > "$K"
+  chmod 755 "$K"; echo "  firmware updates handed to vc-update.sh"
+fi
 
 say "2b) renderer wrapper (plays to a real ALSA device instead of the network stream)"
 R="$ROOT/raumfeld/renderer"

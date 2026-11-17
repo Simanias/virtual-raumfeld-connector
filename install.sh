@@ -16,7 +16,7 @@ UPDATES_HOST="updates.raumfeld.com"
 CONF="$TOOLS/install.conf"
 RESUME_SVC=vc-install-resume
 SRCDIR="$(cd "$(dirname "${BASH_SOURCE[0]:-/dev/null}")" 2>/dev/null && pwd || echo /dev/null)"
-FILES="connman-stub.py vc-up.sh vc-down.sh vc-master.sh vc-volume-bridge.py vc-renderer-libs.py vc-ip-watch.sh vc-setup.sh"
+FILES="connman-stub.py vc-up.sh vc-down.sh vc-master.sh vc-volume-bridge.py vc-renderer-libs.py vc-ip-watch.sh vc-setup.sh vc-update.sh"
 SERVICES="vc-connector.service vc-ip-watch.service"
 RESUME=0; [ "${1:-}" = "--resume" ] && RESUME=1
 [ -n "${VC_DEBUG:-}" ] && set -x    # verbose trace for debugging
@@ -213,22 +213,10 @@ for f in $FILES; do fetch "$f" "$TOOLS/$f"; done
 chmod +x "$TOOLS"/*.sh
 for s in $SERVICES; do fetch "$s" "/etc/systemd/system/$s"; done
 
-c "6) Name + model label (audio -> $CARD)"
+c "6) Name (audio -> $CARD)"
 mkdir -p "$ROOT/var/raumfeld-1.0"
 printf '[GLOBAL]\nrenderer-name=%s\n' "$DEVNAME" > "$ROOT/var/raumfeld-1.0/renderer-config.ini"
-LIB="$ROOT/usr/lib/libraumfeld-1.0.so"
-if [ -f "$LIB" ] && ! strings "$LIB" 2>/dev/null | grep -q '^Virtual Connector$'; then
-  [ -f "$LIB.orig" ] || cp -a "$LIB" "$LIB.orig"
-  python3 - "$LIB" <<'PY' || true
-import sys
-lib=sys.argv[1]; d=open(lib,"rb").read()
-o=b"Raumfeld Connector\x00"; n=b"Virtual Connector\x00\x00"
-if len(o)==len(n) and o in d: open(lib+".new","wb").write(d.replace(o,n))
-PY
-  [ -f "$LIB.new" ] && chmod --reference="$LIB" "$LIB.new" && mv "$LIB.new" "$LIB" && echo "  model label -> Virtual Connector"
-fi
-# no update block (anymore): it made the setup hang, and we already install the newest firmware
-sed -i "/$UPDATES_HOST/d" "$ROOT/etc/hosts" 2>/dev/null || true
+# the model label, the hosts clean-up and the firmware-update hook are applied by vc-up.sh on every start
 
 c "7) Enable services"
 systemctl daemon-reload; systemctl enable vc-connector vc-ip-watch >/dev/null 2>&1 || true
