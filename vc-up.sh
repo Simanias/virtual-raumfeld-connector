@@ -90,21 +90,25 @@ say "2b) renderer wrapper (plays to a real ALSA device instead of the network st
 R="$ROOT/raumfeld/renderer"
 [ -f "$R/renderer.bin" ] || mv "$R/renderer" "$R/renderer.bin"
 # Connector 2 mode: the renderer identifies as a real Connector 2 (hardware id 9), so the EQ and LED
-# settings from the app reach this device. A real Connector 2 always has a line-in, and the renderer's
-# timing relies on it: its audio loop then follows the input and keeps the DAC queue short. Without an
-# input the queue runs full and the device plays ~0.1 s behind the rest of the room. So a card without
-# an input gets a silent one from the ALSA loopback, clocked by the DAC itself (timer_source), so it can
-# never drift against the output. Only if that fails: no line-in at all (--no-input).
+# settings from the app reach this device. A real Connector 2 always has a line-in, and the renderer then
+# times its audio loop by that input. With an input on the same card as the output (e.g. a HiFiBerry
+# DAC+ ADC) that is used and the device plays in sync with the rest of its room. Without one the renderer
+# gets no line-in (--no-input): it then plays a fixed amount behind, which VC_DELAY_MS corrects (tune once
+# by ear). VC_LINEIN=none: never use an input; VC_LINEIN=loopback: a silent input from the ALSA loopback
+# instead — experimental, its offset differs from start to start.
 # VC_MODE=basic keeps the renderer non-virtualised instead (no EQ/LED).
 MODE=basic; CAP=""
 if [ "${VC_MODE:-auto}" != basic ]; then
-  if arecord -l 2>/dev/null | grep -q "^card [0-9]*: $VC_CARD "; then CAP="hw:$VC_CARD"
-  else
+  if [ "${VC_LINEIN:-auto}" = none ]; then CAP=""
+  elif [ "${VC_LINEIN:-auto}" = loopback ]; then
     [ -e /proc/asound/VCLoop ] || lsmod | grep -q "^snd_aloop " || \
       modprobe snd-aloop id=VCLoop index=7 pcm_substreams=1 timer_source="$VC_CARD.0.0" 2>/dev/null
     for i in 1 2 3 4 5; do [ -e /proc/asound/VCLoop ] && break; sleep 0.5; done
     [ -e /proc/asound/VCLoop ] && CAP="hw:VCLoop,1,0"
+  elif arecord -l 2>/dev/null | grep -q "^card [0-9]*: $VC_CARD "; then CAP="hw:$VC_CARD"
   fi
+  [ -n "$CAP" ] || [ -n "${VC_DELAY_MS:-}" ] || \
+    echo "  note: no line-in — if this device plays behind its room, set VC_DELAY_MS in $TOOLS/vc.conf"
   python3 "$TOOLS/vc-renderer-libs.py" "$ROOT" "$R/vc-lib" $([ -n "$CAP" ] || echo --no-input) && MODE=connector2
 fi
 if [ "$MODE" = connector2 ]; then

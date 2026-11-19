@@ -21,6 +21,7 @@ ROOT = os.environ.get("ROOT", "/opt/rfconnector")
 ETH  = os.environ.get("VC_ETH", "eth0")
 WLAN = os.environ.get("VC_WLAN", "wlan0")
 AP_CON = "vc-setup-ap"
+WIFI_DROPPED = "/run/vc-wifi-dropped"     # we disconnected the WiFi client (kept across stack restarts)
 AP_ADDR = os.environ.get("VC_AP_ADDR", "192.168.0.1/24")          # as ConnMan's tethering would use
 SETUP_TIMEOUT = int(os.environ.get("VC_SETUP_TIMEOUT", "900"))     # s of access point before giving up
 TECH_ETH, TECH_WIFI = "/net/connman/technology/ethernet", "/net/connman/technology/wifi"
@@ -396,8 +397,25 @@ if __name__ == "__main__":
     if has_nm() and sh("nmcli", "-t", "-f", "NAME", "con", "show", timeout=10)[1].splitlines().count(AP_CON):
         sh("nmcli", "con", "delete", AP_CON, timeout=20)    # left over from an interrupted setup
         log("removed a leftover setup access point")
+    def wifi_policy():
+        """One network at a time: with a working cable the WiFi client connection is dropped (runtime only,
+        'nmcli device disconnect'). A Pi on both, in the same network, can be reached by the Raumfeld host
+        over WiFi, and its time sync is then off — it plays behind the rest of its room. When the cable
+        goes, the WiFi comes back. Never during a setup (the access point needs the WiFi)."""
+        if not has_nm() or not NET.wifi_present() or NET.tethering or NET.ap_up: return
+        cable = NET.eth_present() and ipv4(ETH) is not None
+        _, out = sh("nmcli", "-t", "-f", "GENERAL.STATE,GENERAL.CONNECTION", "device", "show", WLAN, timeout=5)
+        client = "(connected)" in out and AP_CON not in out
+        if cable and client:
+            sh("nmcli", "device", "disconnect", WLAN, timeout=20)
+            open(WIFI_DROPPED, "w").close(); log("cable connected: WiFi client connection off (one network at a time)")
+        elif not cable and os.path.exists(WIFI_DROPPED) and not client:
+            sh("nmcli", "device", "connect", WLAN, timeout=40)
+            os.remove(WIFI_DROPPED); log("no cable: WiFi client connection back on")
+    wifi_policy()                                    # before master-process announces itself
     MGR.sync_services()
     def watch():                                     # cable/wifi changes -> tell the firmware
+        wifi_policy()
         sig = [(p, str(props["State"])) for p, props in NET.services()]
         if sig != getattr(watch, "last", None):
             if hasattr(watch, "last"): MGR.announce()

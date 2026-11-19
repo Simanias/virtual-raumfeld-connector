@@ -67,10 +67,12 @@ the rootfs is extracted locally. We don't redistribute protected firmware; every
   has no switch of its own (see the table below).
 - Because the renderer identifies as a Connector 2, the app's **EQ** and **LED** settings reach the Pi
   (see [Settings in the app](#settings-in-the-app)). This works with any sound card. A real Connector 2
-  always has a line-in, and the renderer's timing relies on it: with an input (e.g. a HiFiBerry DAC+ ADC)
-  the renderer opens it; without one it gets a silent input from the ALSA loopback (`snd-aloop`),
-  clocked by the DAC itself so it cannot drift. `VC_MODE=basic` in `vc.conf` switches all this off: the
-  renderer then runs as a plain device and only volume/mute work.
+  always has a line-in, and the renderer times its audio by it. With an input on the same card as the
+  output (e.g. a HiFiBerry DAC+ ADC) the renderer uses it, and the device plays **in sync** with the rest
+  of its room — this is the best choice of DAC. Without an input it runs without a line-in and plays a
+  **fixed** amount behind; set `VC_DELAY_MS` once to correct that (see [Managing it](#managing-it)).
+  `VC_MODE=basic` in `vc.conf` switches all this off: the renderer then runs as a plain device and only
+  volume/mute work.
 - The setup is the firmware's own: a simulated setup button starts its setup state machine (access point,
   network choice, room). `VC_SETUP=auto` uses the AP-less path instead (`PreconfiguredSetupController` +
   the built-in `SimulatedCalloutServer`).
@@ -142,14 +144,15 @@ firmware is kept in `/opt/rfconnector.prev`.
 - Set up again (another room or network, or after deleting it in the app):
   `sudo bash /opt/virtualtools/vc-setup.sh --app`, then add it in the Raumfeld app.
   Without the app: `sudo bash /opt/virtualtools/vc-setup.sh "Room name"` (always a new room).
-- Plays behind the other devices in its room? First check that the Pi is on the network **once**: a Pi with
-  both a cable and WiFi in the same network can be reached by the host over WiFi, and its time sync is then
-  off — one Pi 4 played ~1.5 s behind until its WiFi client connection was switched off (it then played in
-  sync without any correction). With a cable, switch WiFi off:
-  `sudo nmcli con modify "<WiFi connection>" connection.autoconnect no` and `sudo nmcli con down "<WiFi
-  connection>"` (the setup access point still works). Only if that is not the cause: `VC_DELAY_MS=<ms>`
-  in `/opt/virtualtools/vc.conf` makes the renderer allow that much extra output latency (it plays earlier);
-  tune it by ear.
+- Plays behind the other devices in its room? Expected with a DAC **without an input**: set
+  `VC_DELAY_MS=<ms>` in `/opt/virtualtools/vc.conf` and restart `vc-connector` — the renderer then plays
+  that much earlier. Tune it by ear; the offset is the same at every start, so one value keeps working
+  (a Pi 4 with a HiFiBerry DAC2 HD: 1675). With an input (e.g. DAC+ ADC) no correction is needed.
+  `VC_LINEIN=loopback` gives such a card a silent input from the ALSA loopback instead; experimental — its
+  offset differs from start to start, so `VC_DELAY_MS` can't fix it.
+- A Pi with a cable is used on the cable only: while one is connected, `connman-stub.py` switches the
+  WiFi client connection off (it comes back when the cable goes, and the setup access point still works).
+  On both, in the same network, the Raumfeld host may reach it over WiFi.
 - No sound at all, and the room it's in stays silent too? At every start `vc-up.sh` checks that the sound
   card opens; if not (a stuck DAC HAT, e.g. the clock chip of a HiFiBerry DAC2 HD), it re-binds the card's
   drivers, which re-initialises its chips over I2C — so try `sudo systemctl restart vc-connector`. If the

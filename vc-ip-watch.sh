@@ -5,9 +5,7 @@
 # device disappears from the app/HA/MA. This watcher then restarts vc-connector, which binds to the
 # current IP again. With a FIXED IP nothing changes, so it never restarts anything.
 set -u
-IFACE=${IFACE:-}
-[ -n "$IFACE" ] || IFACE=$(ip route 2>/dev/null | awk '/^default/{print $5; exit}')
-IFACE=${IFACE:-wlan0}
+FIXED_IFACE=${IFACE:-}       # follow the default route unless IFACE is given (cable <-> WiFi changes count too)
 last=""
 # during a setup with the Raumfeld app the WiFi is the "Raumfeld Setup" access point (192.168.0.1):
 # that is not a network change — restarting then would end the setup
@@ -19,7 +17,9 @@ while true; do
     logger -t vc-ip-watch "firmware update requested; running vc-update.sh"
     systemd-run --quiet --collect --unit vc-firmware-update /bin/bash "$TOOLS/vc-update.sh" --request
   fi
-  ip=$(ip -4 -o addr show "$IFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+  IFACE=${FIXED_IFACE:-$(ip route 2>/dev/null | awk '/^default/{print $5; exit}')}
+  ip=$(ip -4 -o addr show "${IFACE:-none}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+  [ -n "$ip" ] && ip="$IFACE $ip"
   if setup_ap; then sleep 15; continue; fi
   if [ -n "$ip" ] && [ "$ip" != "$last" ]; then
     if [ -n "$last" ]; then
