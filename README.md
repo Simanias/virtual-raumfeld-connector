@@ -142,9 +142,14 @@ firmware is kept in `/opt/rfconnector.prev`.
 - Set up again (another room or network, or after deleting it in the app):
   `sudo bash /opt/virtualtools/vc-setup.sh --app`, then add it in the Raumfeld app.
   Without the app: `sudo bash /opt/virtualtools/vc-setup.sh "Room name"` (always a new room).
-- Plays behind the other devices in its room? Set `VC_DELAY_MS=<ms>` in `/opt/virtualtools/vc.conf` and
-  restart `vc-connector`: the renderer then allows that much extra output latency and plays earlier. Tune
-  it by ear (one Pi 4 with a HiFiBerry DAC+ HD needed 1850).
+- Plays behind the other devices in its room? First check that the Pi is on the network **once**: a Pi with
+  both a cable and WiFi in the same network can be reached by the host over WiFi, and its time sync is then
+  off — one Pi 4 played ~1.5 s behind until its WiFi client connection was switched off (it then played in
+  sync without any correction). With a cable, switch WiFi off:
+  `sudo nmcli con modify "<WiFi connection>" connection.autoconnect no` and `sudo nmcli con down "<WiFi
+  connection>"` (the setup access point still works). Only if that is not the cause: `VC_DELAY_MS=<ms>`
+  in `/opt/virtualtools/vc.conf` makes the renderer allow that much extra output latency (it plays earlier);
+  tune it by ear.
 - No sound at all, and the room it's in stays silent too? At every start `vc-up.sh` checks that the sound
   card opens; if not (a stuck DAC HAT, e.g. the clock chip of a HiFiBerry DAC2 HD), it re-binds the card's
   drivers, which re-initialises its chips over I2C — so try `sudo systemctl restart vc-connector`. If the
