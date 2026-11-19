@@ -145,6 +145,11 @@ firmware is kept in `/opt/rfconnector.prev`.
 - Plays behind the other devices in its room? Set `VC_DELAY_MS=<ms>` in `/opt/virtualtools/vc.conf` and
   restart `vc-connector`: the renderer then allows that much extra output latency and plays earlier. Tune
   it by ear (one Pi 4 with a HiFiBerry DAC+ HD needed 1850).
+- No sound at all, and the room it's in stays silent too? At every start `vc-up.sh` checks that the sound
+  card opens; if not (a stuck DAC HAT, e.g. the clock chip of a HiFiBerry DAC2 HD), it re-binds the card's
+  drivers, which re-initialises its chips over I2C — so try `sudo systemctl restart vc-connector`. If the
+  log (`journalctl -u vc-connector`) then says the card still doesn't open, remove the Pi's power for
+  10 seconds: a reboot keeps the HAT powered. A device that can't play blocks its whole room.
 - Change the audio output: set `VC_CARD` in `/opt/virtualtools/vc.conf` to a card name from `aplay -l`
   (e.g. `sndrpihifiberry`, `Headphones`) and run `sudo systemctl restart vc-connector`.
 

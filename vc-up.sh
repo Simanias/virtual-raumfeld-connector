@@ -210,6 +210,33 @@ pkill -f "^python3 [^ ]*connman-stub.py" 2>/dev/null; pkill -f "^python3 [^ ]*vc
 chroot_kill TERM; sleep 2; chroot_kill KILL
 rm -f "$ROOT/run/dbus/system_bus_socket" "$ROOT/run/messagebus.pid" "$ROOT/var/run/messagebus.pid" "$ROOT/run/avahi-daemon/pid" 2>/dev/null || true
 
+say "4b) check that the sound card opens"
+# A DAC HAT can get stuck (e.g. the clock chip of a HiFiBerry DAC2 HD): the card is there, but every open
+# fails with "Invalid argument", and the renderer — and with it the whole room — stays silent. A reboot
+# doesn't help (the HAT keeps its power); re-binding its drivers re-initialises the chips over I2C.
+dac_opens(){ timeout 5 aplay -q -D "plughw:CARD=$VC_CARD" -f S16_LE -r 44100 -c 2 -s 4410 /dev/zero >/dev/null 2>&1; }
+dac_rebind(){ local n dev drv d dd m pass
+  n=$(aplay -l 2>/dev/null | awk -v c="$VC_CARD" '$1=="card" && $3==c {sub(":", "", $2); print $2; exit}')
+  dev=$(readlink -f "/sys/class/sound/card$n/device" 2>/dev/null); drv=$(readlink -f "$dev/driver" 2>/dev/null)
+  [ -n "$n" ] && [ -d "$drv" ] || return 1
+  case "$(basename "$(readlink -f "$drv/module" 2>/dev/null)")" in snd_usb_audio|"") return 1 ;; esac   # USB: unplug it
+  echo -n "$(basename "$dev")" > "$drv/unbind" || return 1
+  for pass in clk_ snd_soc_; do                 # clock chips first, then codecs (only audio drivers on I2C)
+    for d in /sys/bus/i2c/devices/*-*; do
+      m=$(basename "$(readlink -f "$d/driver/module" 2>/dev/null)"); dd=$(readlink -f "$d/driver" 2>/dev/null)
+      case "$m" in "$pass"*) echo -n "$(basename "$d")" > "$dd/unbind"; echo -n "$(basename "$d")" > "$dd/bind" ;; esac
+    done
+  done
+  echo -n "$(basename "$dev")" > "$drv/bind"; sleep 2
+}
+if [ "$(card_kind "$VC_CARD")" = hdmi ]; then echo "  (HDMI — not checked)"
+elif dac_opens; then echo "  $VC_CARD opens"
+else
+  echo "  !! $VC_CARD does not open — re-initialising its drivers"
+  if dac_rebind && dac_opens; then echo "  $VC_CARD opens again"
+  else echo "  !! $VC_CARD still does not open: remove the Pi's power for 10 seconds (a reboot is not enough)"; fi
+fi
+
 say "5) system dbus + avahi + hardwared (virtualised, HWID=$HWID)"
 chroot "$ROOT" /usr/bin/env -i PATH=$PATHV RAUMFELD_VIRTUALISED_HARDWARE_ID=$HWID \
   G_FILENAME_ENCODING=UTF-8,ISO-8859-1 RAUMFELD_LOG_TARGET=buffers /bin/sh -lc '
